@@ -1,0 +1,24 @@
+{
+  "name": "ask-jev",
+  "version": "0.1.0",
+  "description": "Run hand-authored ask configurations against files, judged by TypeSafe System One",
+  "type": "module",
+  "bin": {
+    "ask-jev": "./src/cli.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --noEmit && node --test test/"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  },
+  "license": "MIT"
+}
