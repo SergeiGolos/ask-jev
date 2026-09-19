@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 import { isRecord } from "./guards.ts";
-import type { Questions } from "./askfile.ts";
+import type { Questions } from "./answers.ts";
 import { uuidv7 } from "./uuid7.ts";
 
 export interface JudgeNote {
@@ -53,7 +53,8 @@ export interface RunInput {
   runId?: string;
 }
 
-export const historyDir = (cwd: string): string => path.join(cwd, ".ask", "history");
+// ponytail: default history directory; upgrade path is configurable history storage
+export const historyDir = (cwd: string): string => path.join(cwd, ".questions", "history");
 
 function slug(file: string): string {
   const s = file.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -130,6 +131,14 @@ export async function listRuns(cwd: string): Promise<RunSummary[]> {
     if (m) runs.push({ runId: m.runId, timestamp: m.timestamp, ask: m.ask, model: m.model, pairCount: m.pairs.length, dir });
   }
   return runs.sort((a, b) => (a.runId < b.runId ? -1 : 1));
+}
+
+/** The newest recorded run; errors when nothing is recorded yet. */
+export async function latestRun(cwd: string): Promise<{ manifest: RunManifest; dir: string }> {
+  const runs = await listRuns(cwd);
+  const latest = runs[runs.length - 1];
+  if (!latest) throw new Error("no runs recorded yet — run an ask first");
+  return { manifest: (await readManifest(latest.dir))!, dir: latest.dir };
 }
 
 export async function findRun(cwd: string, prefix: string): Promise<{ manifest: RunManifest; dir: string }> {

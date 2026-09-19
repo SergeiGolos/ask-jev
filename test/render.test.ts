@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseAsk } from "../src/askfile.ts";
@@ -155,12 +156,13 @@ test("missing token: prompted once per run, not per file", async () => {
   );
 });
 
-test("missing token with no prompt fn on a non-TTY stdin is a hard error", async () => {
+test("missing token with the default prompt adapter off-TTY is a hard error", async () => {
   await assert.rejects(
     renderPrompts({
       ask: parseAsk("---\nmodel: m\n---\nLimit: $limit\n"),
       files: ["src/a.md"],
       tokens: {},
+      isTTY: () => false,
     }),
     /missing token '\$limit'/,
   );
@@ -231,3 +233,55 @@ test("parseRunArgs rejects: missing value, malformed -t, reserved token, unknown
 function readFileFrom(dir: string, p: string): Promise<string> {
   return readFile(path.join(dir, p), "utf8");
 }
+
+/** Local http server for URL-input tests; always close() in a finally. */
+async function serve(body: string, status = 200): Promise<{ url: string; close: () => void }> {
+  const srv = http.createServer((_req, res) => {
+    res.writeHead(status, { "content-type": "text/plain" });
+    res.end(body);
+  });
+  await new Promise<void>((resolve) => srv.listen(0, "127.0.0.1", resolve));
+  const addr = srv.address();
+  if (!addr || typeof addr === "string") throw new Error("listen failed");
+  return { url: `http://127.0.0.1:${addr.port}/doc.md`, close: () => srv.close() };
+}
+
+test("expandInputs: URLs pass through verbatim, dedupe, and mix with files in order", async () => {
+  const dir = await fixture();
+  const a = "https://example.com/a.md";
+  const b = "https://example.com/b.md";
+  const files = await expandInputs([a, "src/*.md", b, a], dir);
+  assert.deepEqual(files, [a, "src/a.md", "src/b.md", b]);
+});
+
+test("URL input: raw body as $content, $file/$filename are the URL", async () => {
+  const dir = await fixture();
+  const srv = await serve("alpha\nbeta\n");
+  try {
+    const prompts = await renderPrompts({
+      ask: parseAsk(ASK),
+      files: [srv.url],
+      tokens: { focus: "x" },
+      cwd: dir,
+      runTool: echoTool,
+    });
+    assert.ok(prompts[0]!.prompt.includes(`Review ${srv.url} for x.`));
+    assert.ok(prompts[0]!.prompt.includes("alpha\nbeta"));
+    assert.deepEqual(prompts[0]!.tools, [`echo x ${srv.url}`]);
+  } finally {
+    srv.close();
+  }
+});
+
+test("URL input: HTTP error status fails the run", async () => {
+  const dir = await fixture();
+  const srv = await serve("nope", 404);
+  try {
+    await assert.rejects(
+      renderPrompts({ ask: parseAsk(ASK), files: [srv.url], tokens: { focus: "x" }, cwd: dir, runTool: echoTool }),
+      /HTTP 404/,
+    );
+  } finally {
+    srv.close();
+  }
+});

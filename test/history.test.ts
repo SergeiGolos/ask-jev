@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseAsk } from "../src/askfile.ts";
-import { findRun, listRuns, recordRun, readPair, type RunInput } from "../src/history.ts";
+import { findRun, latestRun, listRuns, recordRun, readPair, type RunInput } from "../src/history.ts";
 import { uuidv7 } from "../src/uuid7.ts";
 
 const SCHEMA = parseAsk("---\nmodel: m\n---\nbody\n---\nseverity:\n  type: score\n  instructions: i\n  criteria:\n    - low\n    - high\n").schema;
@@ -48,13 +48,13 @@ test("recordRun writes the locked layout with schema appended to requests", asyn
   const manifest = await recordRun(cwd, seedInput(1_700_000_000_000));
   assert.equal(manifest.pairs.length, 2);
   assert.equal(manifest.timestamp, "2023-11-14T22:13:20.000Z");
-  const request = await readFile(path.join(cwd, ".ask", "history", manifest.runId, "001-src-a-ts.request.md"), "utf8");
+  const request = await readFile(path.join(cwd, ".questions", "history", manifest.runId, "001-src-a-ts.request.md"), "utf8");
   assert.ok(request.includes("Review src/a.ts")); // rendered prompt verbatim
   assert.ok(request.includes("type: score")); // schema appended for reference
   assert.ok(request.includes("ask schema (reference only)"));
-  const response = JSON.parse(await readFile(path.join(cwd, ".ask", "history", manifest.runId, "002-src-b-ts.response.json"), "utf8"));
+  const response = JSON.parse(await readFile(path.join(cwd, ".questions", "history", manifest.runId, "002-src-b-ts.response.json"), "utf8"));
   assert.deepEqual(response, { answers: { severity: { type: "score", score: 1 } } });
-  const runJson = JSON.parse(await readFile(path.join(cwd, ".ask", "history", manifest.runId, "run.json"), "utf8"));
+  const runJson = JSON.parse(await readFile(path.join(cwd, ".questions", "history", manifest.runId, "run.json"), "utf8"));
   assert.equal(runJson.ask, "count");
   assert.equal(runJson.pairs[1]!.file, "src/b.ts");
 });
@@ -71,12 +71,23 @@ test("batch runs get a single pair with the batch slug", async () => {
 
 test("listRuns sorts chronologically and skips junk", async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), "aj-hist-"));
-  await mkdir(path.join(cwd, ".ask", "history", "not-a-run"), { recursive: true });
+  await mkdir(path.join(cwd, ".questions", "history", "not-a-run"), { recursive: true });
   const older = await recordRun(cwd, { ...seedInput(0), runId: uuidv7(1_000), now: 1_000 });
   const newer = await recordRun(cwd, { ...seedInput(0), runId: uuidv7(2_000), now: 2_000 });
   const runs = await listRuns(cwd);
   assert.deepEqual(runs.map((r) => r.runId), [older.runId, newer.runId]);
   assert.equal(runs[0]!.pairCount, 2);
+});
+
+test("latestRun returns the newest run, errors when history is empty", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "aj-hist-"));
+  await assert.rejects(latestRun(cwd), /no runs recorded yet/);
+  const older = await recordRun(cwd, { ...seedInput(0), runId: uuidv7(1_000) });
+  const newer = await recordRun(cwd, { ...seedInput(0), runId: uuidv7(2_000) });
+  const { manifest, dir } = await latestRun(cwd);
+  assert.equal(manifest.runId, newer.runId);
+  assert.equal(dir, path.join(cwd, ".questions", "history", newer.runId));
+  assert.ok(older.runId);
 });
 
 test("findRun: unique prefix resolves, ambiguity and misses error", async () => {

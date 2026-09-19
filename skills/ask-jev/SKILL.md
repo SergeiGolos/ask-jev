@@ -3,7 +3,7 @@ name: ask-jev
 description: Run ask-jev judgments (TypeSafe System One / Jev) against a file, a grep or glob subgroup, a diff, or a commit. Use when the user asks to run an ask, gut-feeling or SOLID-score files, or judge changes with ask-jev.
 ---
 
-`ask-jev <ask> -f <path|glob>...` runs a hand-authored ask (`./.ask/<name>.md`, shadowing `~/.ask`; `ask-jev list`) and records the run under `.ask/history/<run-id>`. Cost scales with file count and `$content` size — pick the narrowest target that answers the question.
+`ask-jev <ask> -f <path|glob>...` runs a hand-authored ask (`./.questions/<name>.md`, shadowing `~/.questions`; `ask-jev list`) and records the run under `.questions/history/<run-id>`. Cost scales with file count and `$content` size — pick the narrowest target that answers the question.
 
 ## Pick the target
 
@@ -30,7 +30,7 @@ Files in a diff still get whole-file `$content`. To judge the change, use a zero
 ## Tokens and asks
 
 - `$file`/`$filename`/`$content` come from `-f`; `-t name=value` sets any other token, overriding front-matter `args`. A referenced token with no value hard-errors in non-TTY: pass every `-t`.
-- New ask: `ask-jev new <name>` (`--force` overwrites), then edit `.ask/<name>.md`: front matter (`model:`, `args:`), markdown body, YAML questions after the final `---`.
+- New ask: `ask-jev new <name>` (`--force` overwrites), then edit `.questions/<name>.md`: front matter (`model:`, `args:`), markdown body, YAML questions after the final `---`.
 
 ## Read results
 

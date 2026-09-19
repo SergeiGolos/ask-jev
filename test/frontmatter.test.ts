@@ -42,7 +42,7 @@ test("readAskMeta names the source file in errors", () => {
 
 test("temp dir helper sanity", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "aj-"));
-  await mkdir(path.join(dir, ".ask"), { recursive: true });
-  await writeFile(path.join(dir, ".ask", "a.md"), "x");
+  await mkdir(path.join(dir, ".questions"), { recursive: true });
+  await writeFile(path.join(dir, ".questions", "a.md"), "x");
   assert.ok(dir.includes("aj-"));
 });

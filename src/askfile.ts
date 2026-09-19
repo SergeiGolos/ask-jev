@@ -2,25 +2,7 @@ import { readFile } from "node:fs/promises";
 import { parse as parseYaml } from "yaml";
 import { isRecord } from "./guards.ts";
 import { readAskMeta, splitFrontMatter, type AskMeta } from "./frontmatter.ts";
-
-// Question schema per the TypeSafe contract (map ticket 01).
-export interface ScoreQuestion {
-  type: "score";
-  instructions: string;
-  criteria: string[];
-}
-export interface ChoiceQuestion {
-  type: "choice";
-  instructions: string;
-  criteria: Record<string, string | null>;
-}
-export interface NoulQuestion {
-  type: "noul";
-  instructions: string;
-  criteria?: { true?: string; false?: string };
-}
-export type Question = ScoreQuestion | ChoiceQuestion | NoulQuestion;
-export type Questions = Record<string, Question>;
+import { parseQuestion, type Questions } from "./answers.ts";
 
 export interface ToolSpan {
   /** 0-based line indexes into `body`, inclusive. */
@@ -100,51 +82,4 @@ export function parseQuestions(text: string, source = "schema"): Questions {
   const questions: Questions = {};
   for (const [id, q] of Object.entries(raw)) questions[id] = parseQuestion(id, q, source);
   return questions;
-}
-
-function parseQuestion(id: string, q: unknown, source: string): Question {
-  const at = `${source}: question '${id}'`;
-  if (!isRecord(q)) throw new Error(`${at} must be a mapping`);
-  if (q.type !== "score" && q.type !== "choice" && q.type !== "noul")
-    throw new Error(`${at}: 'type' must be score, choice, or noul`);
-  if (typeof q.instructions !== "string" || q.instructions.length === 0)
-    throw new Error(`${at}: 'instructions' must be a non-empty string`);
-  switch (q.type) {
-    case "score": {
-      if (
-        !Array.isArray(q.criteria) ||
-        q.criteria.length < 2 ||
-        !q.criteria.every((c) => typeof c === "string" && c.length > 0)
-      )
-        throw new Error(`${at}: 'criteria' must be an array of ≥2 non-empty level descriptions`);
-      return { type: "score", instructions: q.instructions, criteria: q.criteria };
-    }
-    case "choice": {
-      if (!isRecord(q.criteria))
-        throw new Error(`${at}: 'criteria' must be a mapping of option → rubric (or null)`);
-      const criteria: Record<string, string | null> = {};
-      for (const [opt, rubric] of Object.entries(q.criteria)) {
-        if (rubric !== null && typeof rubric !== "string")
-          throw new Error(`${at}: criteria option '${opt}' must be a string or null`);
-        criteria[opt] = rubric;
-      }
-      return { type: "choice", instructions: q.instructions, criteria };
-    }
-    case "noul": {
-      if (q.criteria === undefined) return { type: "noul", instructions: q.instructions };
-      if (!isRecord(q.criteria)) throw new Error(`${at}: 'criteria' must be a mapping with 'true'/'false'`);
-      const criteria: { true?: string; false?: string } = {};
-      for (const key of ["true", "false"] as const) {
-        const v = q.criteria[key];
-        if (v === undefined) continue;
-        if (typeof v !== "string") throw new Error(`${at}: criteria '${key}' must be a string`);
-        criteria[key] = v;
-      }
-      return { type: "noul", instructions: q.instructions, criteria };
-    }
-    default: {
-      const _exhaustive: never = q.type;
-      return _exhaustive;
-    }
-  }
 }

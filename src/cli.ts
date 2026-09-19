@@ -1,18 +1,22 @@
 #!/usr/bin/env node
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { readAsk } from "./askfile.ts";
-import { askDirs, listAsks, loadAskEnv, resolveAsk } from "./config.ts";
-import { findRun, historyDir, listRuns, readPair, recordRun, type PairInput } from "./history.ts";
-import { judge, judgeState, prettyPair, type JudgeResult } from "./judge.ts";
-import { expandInputs, renderPrompts } from "./render.ts";
+import { formatPair } from "./answers.ts";
+import { askDirs, listAsks } from "./config.ts";
+import { CliError } from "./errors.ts";
+import { layeredEnv } from "./env.ts";
+import { findRun, historyDir, listRuns, readPair, type RunManifest } from "./history.ts";
+import { buildTreeData, loadAllManifests } from "./matrix.ts";
+import { BUILTIN } from "./render.ts";
 import { writeReport } from "./report.ts";
+import { runAsk } from "./run.ts";
+import { startServer } from "./serve.ts";
 import { newAskTemplate } from "./template.ts";
 
-export class CliError extends Error {}
-
 export async function main(argv: string[]): Promise<number> {
-  await loadAskEnv();
+  const { folder, profile } = askDirs();
+  for (const [k, v] of Object.entries(await layeredEnv([path.join(profile, ".env"), path.join(folder, ".env")])))
+    if (process.env[k] === undefined) process.env[k] = v;
   const [cmd, ...rest] = argv;
   if (cmd === undefined || cmd === "-h" || cmd === "--help") return usage(0);
   if (cmd === "list") return cmdList();
@@ -24,6 +28,7 @@ export async function main(argv: string[]): Promise<number> {
   if (cmd === "history") return cmdHistory(rest);
   if (cmd === "show") return cmdShow(rest);
   if (cmd === "report") return cmdReport(rest);
+  if (cmd === "serve") return cmdServe(rest);
   return cmdRun(cmd, rest);
 }
 
@@ -31,13 +36,14 @@ function usage(code: number): number {
   console.log(`ask-jev — run hand-authored asks, judged by TypeSafe System One
 
 Usage:
-  ask-jev list                                     list discovered asks (folder ./.ask shadows profile ~/.ask)
+  ask-jev list                                     list discovered asks (folder ./.questions shadows profile ~/.questions)
   ask-jev new <name>                               scaffold a new ask
   ask-jev <question-name> -f <path|glob>...        run an ask, one judge call per file
         [-t name=value]... [--batch] [--verbose] [--json] [--html]
   ask-jev history [run-id]                         list runs, or one run's pairs
   ask-jev show <run-id> [pair]                     print a pair's request md + response json
   ask-jev report [run-id] [-o file]                write the HTML report (default: latest run)
+  ask-jev serve [path] [--port 3000]               serve trend matrix web dashboard over history
 `);
   return code;
 }
@@ -93,7 +99,7 @@ export function parseRunArgs(rest: string[]): RunFlags {
     else fail(`unknown argument '${a}'`);
   }
   for (const k of Object.keys(flags.tokens))
-    if (k === "file" || k === "filename" || k === "content")
+    if (BUILTIN.has(k))
       fail(`token '${k}' is built from -f and cannot be overridden with -t`);
   return flags;
 }
@@ -104,13 +110,13 @@ function fail(msg: string): never {
   );
 }
 
-/** Scaffold ./.ask/<name>.md from the built-in template; refuses to overwrite without --force. */
+/** Scaffold ./.questions/<name>.md from the built-in template; refuses to overwrite without --force. */
 export async function cmdNew(name: string, rest: string[], cwd: string = process.cwd()): Promise<number> {
   const force = rest.includes("--force");
   const unsupported = rest.filter((a) => a !== "--force");
   if (unsupported.length > 0) fail(`new takes only --force, got '${unsupported.join(" ")}'`);
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(name)) fail(`invalid ask name '${name}': use letters, digits, '-', '_'`);
-  const dir = path.join(cwd, ".ask");
+  const dir = path.join(cwd, ".questions");
   const file = path.join(dir, `${name}.md`);
   if (!force) {
     let exists = false;
@@ -199,69 +205,99 @@ async function cmdReport(rest: string[]): Promise<number> {
 
 async function cmdRun(name: string, rest: string[], cwd: string = process.cwd()): Promise<number> {
   const flags = parseRunArgs(rest);
-  const found = await resolveAsk(name, cwd);
-  if (!found) {
-    const { folder, profile } = askDirs(cwd);
-    console.error(`no ask '${name}' in ${folder} or ${profile}`);
-    return 1;
-  }
-  const ask = await readAsk(found.file);
-  if (!ask.schema || Object.keys(ask.schema).length === 0)
-    throw new CliError(`ask '${name}' has no questions schema — add one after the final ---`);
-  const files = await expandInputs(flags.files, cwd);
-  const rendered = await renderPrompts({
-    ask,
-    files,
+  const key = process.env.TYPESAFE_API_KEY;
+  if (!key) throw new CliError("TYPESAFE_API_KEY is not set — put it in .questions/.env or export it");
+  const result = await runAsk({
+    name,
+    cwd,
+    argv: [name, ...rest],
+    files: flags.files,
     tokens: flags.tokens,
     batch: flags.batch,
-    onToolStart: flags.verbose ? (cmd) => console.error(`[tool] $ ${cmd}`) : undefined,
+    key,
+    log: flags.verbose ? (line) => console.error(line) : undefined,
   });
-  const key = process.env.TYPESAFE_API_KEY;
-  if (!key) throw new CliError("TYPESAFE_API_KEY is not set — put it in .ask/.env or export it");
-  const model = ask.meta.model ?? "jev-latest";
-
-  const pairs: PairInput[] = [];
-  for (let i = 0; i < rendered.length; i++) {
-    const r = rendered[i]!;
-    const file = flags.batch || files.length === 0 ? "batch" : files[i]!;
-    const t0 = Date.now();
-    const res = await judge({
-      key,
-      model,
-      questions: ask.schema,
-      state: judgeState(file, r.prompt, !flags.batch && files.length > 0),
-    });
-    const latencyMs = Date.now() - t0;
-    if (flags.verbose) console.error(`[judge] ${file} ${res.model} ${latencyMs} ms`);
-    pairs.push({
-      file,
-      request: r.prompt,
-      response: res,
-      notes: { tools: r.tools.map((command) => ({ command })), judge: { model: res.model, usage: res.usage, latencyMs } },
-    });
-  }
-
-  const manifest = await recordRun(cwd, {
-    ask: name,
-    askSource: found.source,
-    model,
-    files,
-    argv: [name, ...rest],
-    pairs,
-    schema: ask.schema,
-  });
-
   if (flags.json) {
-    console.log(JSON.stringify({ runId: manifest.runId, model, pairs: pairs.map((p) => ({ file: p.file, answers: (p.response as JudgeResult).answers })) }, null, 2));
+    console.log(
+      JSON.stringify(
+        { runId: result.manifest.runId, model: result.model, pairs: result.pairs.map((p) => ({ file: p.file, answers: p.response.answers })) },
+        null,
+        2,
+      ),
+    );
   } else {
-    for (const p of pairs) console.log(prettyPair(p.file, p.response));
+    for (const p of result.pairs) console.log(formatPair(p.file, p.response));
   }
-  if (flags.verbose) console.error(`run ${manifest.runId} recorded`);
+  if (flags.verbose) console.error(`run ${result.manifest.runId} recorded`);
   if (flags.html) {
-    const report = await writeReport(cwd, manifest.runId, path.join(historyDir(cwd), manifest.runId, "report.html"));
+    const report = await writeReport(cwd, result.manifest.runId, path.join(historyDir(cwd), result.manifest.runId, "report.html"));
     if (flags.verbose) console.error(`[report] ${report}`);
   }
   return 0;
+}
+
+export async function cmdServe(rest: string[], cwd: string = process.cwd()): Promise<number> {
+  let targetPath = cwd;
+  let port: number | undefined = undefined;
+
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!;
+    if (a === "-h" || a === "--help") {
+      console.log(`ask-jev serve — serve trend matrix web dashboard over history
+
+Usage:
+  ask-jev serve [path] [--port <n>]
+
+Options:
+  path          project directory containing .questions/history (default: current directory)
+  --port <n>    port to listen on (default: 3000, auto-increments if in use)
+`);
+      return 0;
+    }
+    if (a === "--port") {
+      const p = rest[++i];
+      if (!p || !/^\d+$/.test(p)) throw new CliError("--port requires an integer value");
+      port = Number.parseInt(p, 10);
+    } else if (a.startsWith("-")) {
+      throw new CliError(`unknown argument '${a}'`);
+    } else {
+      targetPath = path.resolve(cwd, a);
+    }
+  }
+
+  const histDir = historyDir(targetPath);
+  console.log(`Indexing ${histDir}...`);
+  const manifests = await loadAllManifests(histDir);
+  await buildTreeData(histDir, manifests);
+  const fileSet = new Set<string>();
+  for (const m of manifests) {
+    for (const f of m.files) fileSet.add(path.normalize(f));
+  }
+
+  console.log(`Indexed ${manifests.length} runs across ${fileSet.size} files.`);
+
+  const running = await startServer({
+    cwd: targetPath,
+    port,
+    initialManifests: manifests,
+  });
+
+  console.log(`Serving trend matrix dashboard:
+  URL:     ${running.url}
+  History: ${histDir}
+Press Ctrl+C to stop.`);
+
+  const { promise, resolve } = Promise.withResolvers<number>();
+  const cleanup = async () => {
+    console.log("\nStopping server...");
+    await running.close();
+    resolve(0);
+  };
+
+  process.once("SIGINT", cleanup);
+  process.once("SIGTERM", cleanup);
+
+  return promise;
 }
 
 if (import.meta.main) {

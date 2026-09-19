@@ -5,8 +5,9 @@ import { readAskMeta, splitFrontMatter } from "./frontmatter.ts";
 
 export type AskSource = "folder" | "profile";
 
-export function askDirs(cwd: string = process.cwd()): { folder: string; profile: string } {
-  return { folder: path.join(cwd, ".ask"), profile: path.join(homedir(), ".ask") };
+export function askDirs(cwd: string = process.cwd(), home: string = homedir()): { folder: string; profile: string } {
+  // ponytail: hardcoded to .questions; add custom path config or env var if requested
+  return { folder: path.join(cwd, ".questions"), profile: path.join(home, ".questions") };
 }
 
 export interface ResolvedAsk {
@@ -15,8 +16,12 @@ export interface ResolvedAsk {
 }
 
 /** Folder ask first, profile ask second; undefined when neither has `<name>.md`. */
-export async function resolveAsk(name: string, cwd: string = process.cwd()): Promise<ResolvedAsk | undefined> {
-  const { folder, profile } = askDirs(cwd);
+export async function resolveAsk(
+  name: string,
+  cwd: string = process.cwd(),
+  home: string = homedir(),
+): Promise<ResolvedAsk | undefined> {
+  const { folder, profile } = askDirs(cwd, home);
   for (const [dir, source] of [
     [folder, "folder"],
     [profile, "profile"],
@@ -39,8 +44,8 @@ export interface AskEntry {
 }
 
 /** Every discovered ask; on a name clash the folder ask wins. */
-export async function listAsks(cwd: string = process.cwd()): Promise<AskEntry[]> {
-  const { folder, profile } = askDirs(cwd);
+export async function listAsks(cwd: string = process.cwd(), home: string = homedir()): Promise<AskEntry[]> {
+  const { folder, profile } = askDirs(cwd, home);
   const byName: Record<string, AskEntry> = {};
   for (const [dir, source] of [
     [profile, "profile"],
@@ -50,7 +55,7 @@ export async function listAsks(cwd: string = process.cwd()): Promise<AskEntry[]>
     try {
       files = (await readdir(dir)).filter((f) => f.toLowerCase().endsWith(".md"));
     } catch {
-      continue; // no .ask dir at this level
+      continue; // no .questions dir at this level
     }
     for (const f of files) {
       const file = path.join(dir, f);
@@ -66,43 +71,4 @@ export async function listAsks(cwd: string = process.cwd()): Promise<AskEntry[]>
     }
   }
   return Object.values(byName).sort((a, b) => a.name.localeCompare(b.name));
-}
-
-/**
- * Layer .env files under process.env: folder `./.ask/.env` beats profile `~/.ask/.env`,
- * and an already-set real environment variable beats both.
- */
-export async function loadAskEnv(cwd: string = process.cwd()): Promise<void> {
-  const { folder, profile } = askDirs(cwd);
-  const merged: Record<string, string> = {}; // profile first, folder overwrites → nearer wins
-  for (const file of [path.join(profile, ".env"), path.join(folder, ".env")]) {
-    let text: string;
-    try {
-      text = await readFile(file, "utf8");
-    } catch {
-      continue;
-    }
-    for (const [k, v] of parseDotEnv(text)) merged[k] = v;
-  }
-  for (const [k, v] of Object.entries(merged))
-    if (process.env[k] === undefined) process.env[k] = v;
-}
-
-function parseDotEnv(text: string): [string, string][] {
-  const out: [string, string][] = [];
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
-    if (eq <= 0) continue; // ponytail: no `export` prefix, interpolation, or multiline values — add if an .env needs them
-    const key = line.slice(0, eq).trim();
-    let value = line.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    )
-      value = value.slice(1, -1);
-    out.push([key, value]);
-  }
-  return out;
 }

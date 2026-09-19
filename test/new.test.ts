@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseAsk } from "../src/askfile.ts";
 import { renderPrompts } from "../src/render.ts";
-import { cmdNew, parseRunArgs } from "../src/cli.ts";
+import { cmdNew } from "../src/cli.ts";
+import { resolveAsk } from "../src/config.ts";
+import { runAsk } from "../src/run.ts";
 import { newAskTemplate } from "../src/template.ts";
 
 test("the scaffold template parses into a valid ask", () => {
@@ -37,7 +39,7 @@ test("the scaffold renders end-to-end without prompting", async () => {
 test("cmdNew scaffolds, refuses overwrite, forces overwrite", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "aj-cmdnew-"));
   assert.equal(await cmdNew("review", [], dir), 0);
-  const file = path.join(dir, ".ask", "review.md");
+  const file = path.join(dir, ".questions", "review.md");
   const first = await readFile(file, "utf8");
   await assert.rejects(cmdNew("review", [], dir), /already exists.*--force/);
   await writeFile(file, "clobbered");
@@ -52,21 +54,26 @@ test("cmdNew rejects bad names and extra flags", async () => {
   await assert.rejects(cmdNew("ok", ["-f", "x"], dir), /new takes only --force/);
 });
 
-test("scaffolded ask round-trips through the real CLI run path", async () => {
+test("scaffolded ask round-trips through the real run pipeline", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "aj-roundtrip-"));
   await mkdir(path.join(dir, "src"), { recursive: true });
   await writeFile(path.join(dir, "src", "a.ts"), "const x = 1;\n");
   await cmdNew("review", [], dir);
-  const found = await import("../src/config.ts").then((m) => m.resolveAsk("review", dir));
+  const found = await resolveAsk("review", dir);
   assert.ok(found, "scaffolded ask is discoverable");
   assert.equal(found!.source, "folder");
-  const parsed = parseAsk(await readFile(found!.file, "utf8"));
-  const flags = parseRunArgs(["-f", "src/*.ts"]);
-  const prompts = await renderPrompts({
-    ask: parsed,
-    files: await import("../src/render.ts").then((m) => m.expandInputs(flags.files, dir)),
-    tokens: flags.tokens,
-    readText: (p) => readFile(path.join(dir, p), "utf8"),
+  const fetchImpl = (async () =>
+    Response.json({ model: "jev-1", answers: { severity: { score: 1 }, flag: { noul: 0.5 } } })) as typeof fetch;
+  const result = await runAsk({
+    name: "review",
+    cwd: dir,
+    argv: ["review", "-f", "src/a.ts"],
+    files: ["src/a.ts"],
+    tokens: {},
+    key: "k",
+    fetchImpl,
   });
-  assert.ok(prompts[0]!.prompt.includes("const x = 1;"));
+  assert.ok(result.pairs[0]!.request.includes("# Review request — ask 'review'"));
+  assert.ok(result.pairs[0]!.request.includes("const x = 1;"));
+  assert.deepEqual(result.pairs[0]!.response.answers, { severity: { score: 1 }, flag: { noul: 0.5 } });
 });

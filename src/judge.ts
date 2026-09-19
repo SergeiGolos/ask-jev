@@ -2,14 +2,6 @@ import { isRecord } from "./guards.ts";
 
 const API = "https://api.typesafe.ai/v1/systemone";
 
-const LANG: Record<string, string> = {
-  ts: "TypeScript", tsx: "TypeScript", js: "JavaScript", mjs: "JavaScript", cjs: "JavaScript", jsx: "JavaScript",
-  py: "Python", go: "Go", rs: "Rust", java: "Java", kt: "Kotlin", swift: "Swift", rb: "Ruby", php: "PHP",
-  c: "C", h: "C", cpp: "C++", cc: "C++", cs: "C#", md: "Markdown", json: "JSON",
-};
-
-export const langOf = (p: string): string => LANG[p.split(".").pop()!.toLowerCase()] ?? "Unknown";
-
 export interface JudgeInput {
   key: string;
   model: string;
@@ -63,29 +55,3 @@ export async function judge(input: JudgeInput): Promise<JudgeResult> {
   }
 }
 
-/** The state field for one judge call: the rendered prompt is the entire state (map ticket 01). */
-export function judgeState(file: string, prompt: string, single: boolean): Record<string, unknown> {
-  return single ? { prompt, path: file, language: langOf(file) } : { prompt };
-}
-
-/** Human-readable block for one recorded pair (default terminal output). */
-export function prettyPair(file: string, response: unknown): string {
-  const lines = [file];
-  if (isRecord(response) && isRecord(response.answers)) {
-    for (const [id, a] of Object.entries(response.answers)) {
-      if (!isRecord(a)) continue;
-      if (typeof a.score === "number") {
-        const legend = isRecord(a.legend) ? a.legend : {};
-        const label = legend[String(Math.round(a.score))];
-        lines.push(`  ${id} ${a.score.toFixed(1)}${typeof label === "string" ? ` — ${label}` : ""}`);
-      } else if (typeof a.noul === "number") {
-        lines.push(`  ${id} ${a.noul >= 0.5 ? "yes" : "no"} (${Math.round(a.noul * 100)}%)`);
-      } else if (typeof a.choice === "string") {
-        lines.push(`  ${id} ${a.choice}`);
-      } else {
-        lines.push(`  ${id} ${JSON.stringify(a)}`);
-      }
-    }
-  }
-  return lines.join("\n");
-}

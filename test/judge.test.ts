@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { judge, judgeState, langOf, prettyPair } from "../src/judge.ts";
+import { judge } from "../src/judge.ts";
 
 const QUESTIONS = { severity: { type: "score", instructions: "i", criteria: ["low", "high"] } };
 
@@ -74,21 +74,4 @@ test("judge: 401 names the key, 422 surfaces the validation body", async () => {
     }),
     /TypeSafe API 422.*score needs >=2 levels/s,
   );
-});
-
-test("judgeState: per-file carries path+language, batch is prompt-only", () => {
-  assert.deepEqual(judgeState("a.ts", "p", true), { prompt: "p", path: "a.ts", language: "TypeScript" });
-  assert.deepEqual(judgeState("batch", "p", false), { prompt: "p" });
-  assert.equal(langOf("x.py"), "Python");
-});
-
-test("prettyPair shapes scores with legend labels, noul and choice", () => {
-  const out = prettyPair("src/a.ts", {
-    answers: {
-      severity: { type: "score", score: 2.4, legend: { "0": "none", "1": "minor", "2": "serious", "3": "critical" } },
-      flag: { type: "noul", noul: 0.15 },
-      queue: { type: "choice", choice: "backend" },
-    },
-  });
-  assert.equal(out, "src/a.ts\n  severity 2.4 — serious\n  flag no (15%)\n  queue backend");
 });

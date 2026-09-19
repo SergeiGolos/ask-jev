@@ -27,7 +27,7 @@ function seedInput(now: number): RunInput {
   };
 }
 
-test("renderReportHtml: three levels, escaping, verbose records", () => {
+test("renderReportHtml: three levels, escaping, verbose records, file tree", () => {
   const manifest = {
     runId: uuidv7(0),
     timestamp: "2026-01-01T00:00:00.000Z",
@@ -45,14 +45,27 @@ test("renderReportHtml: three levels, escaping, verbose records", () => {
       response: { answers: { severity: { type: "score", score: 2.4 } } },
     },
   ]);
-  assert.ok(html.includes('data-view="result"')); // level 1 default
-  assert.ok(html.includes("Extended") && html.includes("verbose")); // all three levels reachable
-  assert.ok(!html.includes("<b>html</b>")); // request is escaped
+
+  // Default view level is result; extended & verbose reachable via buttons
+  assert.ok(html.includes('id="pair-1" data-view="result"'));
+  assert.ok(html.includes(">Result</button>") && html.includes(">Extended</button>") && html.includes(">Verbose</button>"));
+
+  // Content escaping
+  assert.ok(!html.includes("<b>html</b>"));
   assert.ok(html.includes("&lt;b&gt;html&lt;/b&gt;"));
-  assert.ok(html.includes("severity&nbsp;<b>2.4</b>")); // result chip
-  assert.ok(html.includes("$ wc -l src/a.ts")); // console records present
-  assert.ok(!/<input type="checkbox"[^>]*checked/.test(html)); // verbose checkbox unchecked by default
+
+  // Result metrics
+  assert.ok(html.includes('data-q="severity"'));
+  assert.ok(html.includes(">2.4</b>"));
+
+  // Console output in verbose
+  assert.ok(html.includes("$ wc -l src/a.ts"));
   assert.ok(html.includes("console output"));
+
+  // File tree
+  assert.ok(html.includes("src/"));
+  assert.ok(html.includes('href="#pair-1"'));
+  assert.ok(html.includes("a.ts"));
 });
 
 test("writeReport: -o path honored, latest run by default, no-runs error", async () => {
@@ -62,7 +75,7 @@ test("writeReport: -o path honored, latest run by default, no-runs error", async
   const out = await writeReport(cwd, undefined, "my-report.html");
   assert.ok(out.endsWith("my-report.html"));
   const html = await readFile(out, "utf8");
-  assert.ok(html.includes(newer.runId)); // default = latest run
+  assert.ok(html.includes(newer.runId.slice(0, 8))); // default = latest run
   await assert.rejects(writeReport(cwd, "ffffffff", undefined), /no run matching/);
   const empty = await mkdtemp(path.join(tmpdir(), "aj-rep2-"));
   await assert.rejects(writeReport(empty, undefined, undefined), /no runs recorded yet/);

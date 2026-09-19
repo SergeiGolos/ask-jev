@@ -7,7 +7,18 @@ import type { ParsedAsk } from "./askfile.ts";
 
 const execp = promisify(exec);
 
-const BUILTIN: Record<string, true> = { file: true, filename: true, content: true };
+const URL_RE = /^https?:\/\//;
+const URL_TIMEOUT_MS = 30_000;
+
+/** Fetch a -f URL input: redirects followed, hard timeout, non-2xx is a run error. */
+async function readUrl(url: string): Promise<string> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(URL_TIMEOUT_MS) });
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status} ${res.statusText}`);
+  return res.text();
+}
+
+/** Built-in tokens derived from -f; -t may not shadow them. */
+export const BUILTIN: ReadonlySet<string> = new Set(["file", "filename", "content"]);
 const TOKEN = /\$([A-Za-z_][A-Za-z0-9_]*)/g;
 
 export interface RenderOptions {
@@ -17,17 +28,30 @@ export interface RenderOptions {
   /** -t values; override front-matter args, never the built-ins. */
   tokens: Record<string, string>;
   batch?: boolean;
+  /** Base for resolving relative file paths in the default reader. */
+  cwd?: string;
+  /** TTY probe for the default prompt adapter; defaults to stdin. */
+  isTTY?: () => boolean;
   prompt?: (name: string) => Promise<string>;
   runTool?: (cmd: string) => Promise<string>;
   readText?: (path: string) => Promise<string>;
   onToolStart?: (cmd: string) => void;
 }
 
-/** Expand -f patterns (literal paths or globs) to files: deduped, in pattern order, sorted within a pattern. */
+/**
+ * Expand -f patterns to files: literal paths or globs, deduped, in pattern order, sorted within a pattern.
+ * http(s) URLs pass through verbatim (deduped on the string) and are fetched at render time.
+ */
 export async function expandInputs(patterns: string[], cwd = process.cwd()): Promise<string[]> {
   const files: string[] = [];
   const seen = new Set<string>();
   for (const pattern of patterns) {
+    if (URL_RE.test(pattern)) {
+      if (seen.has(pattern)) continue;
+      seen.add(pattern);
+      files.push(pattern);
+      continue;
+    }
     const matches: string[] = [];
     for await (const entry of glob(pattern, { cwd })) matches.push(entry);
     matches.sort();
@@ -63,16 +87,17 @@ export async function renderPrompts(o: RenderOptions): Promise<{ prompt: string;
 
   const referenced = new Set([...placeholders(ask.body), ...ask.tools.flatMap(placeholders)]);
   for (const name of referenced) {
-    if (BUILTIN[name]) {
+    if (BUILTIN.has(name)) {
       if (files.length === 0) throw new Error(`ask references $${name} but no -f input was given`);
       if (batch && name === "filename")
         throw new Error("$filename is ambiguous in --batch mode; use $file or $content");
       continue; // resolved per prompt below
     }
-    if (!(name in ctx)) ctx[name] = await (o.prompt ?? promptFor)(name);
+    if (!(name in ctx)) ctx[name] = o.prompt ? await o.prompt(name) : await promptFor(name, o.isTTY);
   }
 
-  const read = o.readText ?? ((p: string) => readFile(p, "utf8"));
+  const base = o.cwd ?? process.cwd();
+  const read = o.readText ?? ((p: string) => (URL_RE.test(p) ? readUrl(p) : readFile(resolve(base, p), "utf8")));
   // $content drops one trailing newline (like tool stdout) so the ask's own layout controls spacing.
   const readTrimmed = async (p: string) => (await read(p)).replace(/\n$/, "");
   const needsContent = referenced.has("content");
@@ -134,8 +159,8 @@ async function runTool(cmd: string): Promise<string> {
   }
 }
 
-async function promptFor(name: string): Promise<string> {
-  if (!process.stdin.isTTY)
+async function promptFor(name: string, isTTY: () => boolean = () => process.stdin.isTTY): Promise<string> {
+  if (!isTTY())
     throw new Error(
       `missing token '$${name}': pass -t ${name}=<value>, set it in front matter, or run on a TTY`,
     );
