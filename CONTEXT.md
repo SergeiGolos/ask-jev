@@ -9,10 +9,10 @@ A named, hand-authored question configuration: a markdown file `<name>.md` livin
 The ask's filename without the `.md` extension. `ask-jev <ask name>` invokes it.
 
 ## Profile ask / Folder ask
-Profile ask: lives in `~/.ask`. Folder ask: lives in the `.ask` folder of the directory being analyzed. A folder ask shadows a profile ask of the same name.
+Profile ask: lives in `~/.questions`. Folder ask: lives in the `.questions` folder of the directory being analyzed. A folder ask shadows a profile ask of the same name.
 
 ## URL input
-A `-f` input that is an `http(s)` URL rather than a path. Treated like a file: `$file`/`$filename` are the URL verbatim, the fetched body is `$content`, and runs against the same URL stack as one series in history.
+A `-f` input that is an `http(s)` URL rather than a path. Treated like a file: `$file`/`$filename` are the URL verbatim, the fetched body is `$content`, and runs against the same URL stack as one series in history, grouped by host in the trend tree.
 
 ## Prompt body
 The markdown between the front matter and the schema separator. It becomes the question sent to the judge, verbatim after substitution.

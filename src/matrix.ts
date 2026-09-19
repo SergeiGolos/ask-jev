@@ -3,6 +3,8 @@ import path from "node:path";
 import { isRecord } from "./guards.ts";
 import type { RunManifest, PairRecord } from "./history.ts";
 
+const URL_RE = /^https?:\/\//;
+
 export interface TreeNode {
   name: string;
   path: string;
@@ -132,7 +134,8 @@ export async function buildTreeData(historyDir: string, manifests: RunManifest[]
     if (!maxTime || m.timestamp > maxTime) maxTime = m.timestamp;
 
     for (const f of m.files) {
-      const norm = path.normalize(f);
+      // URLs keep their verbatim form as the stacking identity; only real paths get path normalization.
+      const norm = URL_RE.test(f) ? f : path.normalize(f);
       let item = fileRunCounts.get(norm);
       if (!item) {
         item = { count: 0, asks: new Set() };
@@ -168,6 +171,20 @@ export async function buildTreeData(historyDir: string, manifests: RunManifest[]
   const rootDir: InternalDir = { name: "root", path: "", files: new Map(), dirs: new Map() };
 
   for (const [filePath, info] of fileRunCounts.entries()) {
+    if (URL_RE.test(filePath)) {
+      // URL inputs render as leaves grouped under a virtual per-host directory (path = scheme://host).
+      const schemeEnd = filePath.indexOf("://") + 3;
+      const rest = filePath.slice(schemeEnd);
+      const slash = rest.indexOf("/");
+      const hostPath = filePath.slice(0, slash === -1 ? filePath.length : schemeEnd + slash);
+      let hostDir = rootDir.dirs.get(hostPath);
+      if (!hostDir) {
+        hostDir = { name: rest.slice(0, slash === -1 ? rest.length : slash), path: hostPath, files: new Map(), dirs: new Map() };
+        rootDir.dirs.set(hostPath, hostDir);
+      }
+      hostDir.files.set(filePath, { path: filePath, count: info.count, asks: Array.from(info.asks) });
+      continue;
+    }
     const parts = filePath.split(path.sep);
     let cur = rootDir;
     for (let i = 0; i < parts.length - 1; i++) {
@@ -197,7 +214,7 @@ export async function buildTreeData(historyDir: string, manifests: RunManifest[]
     for (const f of Array.from(dir.files.values()).sort((a, b) => a.path.localeCompare(b.path))) {
       totalRuns += f.count;
       children.push({
-        name: path.basename(f.path),
+        name: path.basename(f.path) || f.path,
         path: f.path,
         type: "file",
         runCount: f.count,

@@ -18,7 +18,7 @@ description: Run ask-jev judgments (TypeSafe System One / Jev) against a file, a
 
 `-f` holds one value per flag — the `printf` form repeats it. Globs are deduped and sorted within pattern; directories are rejected (use `dir/**/*`); zero matches errors. Substitution splits on whitespace, so prefer globs when the subgroup is a path shape. Guard git recipes against empty output (clean tree → no `-f` → ask referencing `$content` fails).
 
-URL targets: `https?://` inputs bypass the filesystem — fetched fresh per run (redirects followed, ~30s timeout, non-2xx fails the run), raw body becomes `$content`, `$file`/`$filename` are the URL verbatim. Runs against the same URL stack as one series in `ask-jev history` and the serve views.
+URL targets: `https?://` inputs bypass the filesystem — fetched fresh per run (redirects followed, ~30s timeout, non-2xx fails the run), raw body becomes `$content`, `$file`/`$filename` are the URL verbatim. Runs against the same URL stack as one series in `ask-jev history` and the serve views, grouped by host in the trend tree.
 
 ## Pick per-file or --batch (the cost fork)
 
