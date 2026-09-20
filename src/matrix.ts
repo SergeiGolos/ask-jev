@@ -1,4 +1,5 @@
 import path from "node:path";
+import { grepMatcher } from "./grepmatch.ts";
 import { isRecord } from "./guards.ts";
 import { loadAllManifests, readPairResponse, type RunManifest, type PairRecord } from "./history.ts";
 import { type Direction, type ParsedAnswer } from "./answers.ts";
@@ -200,14 +201,7 @@ export async function buildMatrixData(
   if (!query || typeof query !== "object")
     throw new TypeError("buildMatrixData: query object is required");
   const targetPath = query.path ? path.normalize(query.path) : "";
-  let grepRegex: RegExp | null = null;
-  if (query.grep) {
-    try {
-      grepRegex = new RegExp(query.grep, "i");
-    } catch {
-      // fallback to literal substring
-    }
-  }
+  const grepMatch = query.grep ? grepMatcher(query.grep) : null;
 
   const filteredRuns = manifests.filter((m) => {
     if (query.ask && !m.asks.some((a) => a.ask === query.ask)) return false;
@@ -302,14 +296,9 @@ export async function buildMatrixData(
     if (query.questions && query.questions.length > 0 && !query.questions.includes(qid)) {
       continue;
     }
-    if (grepRegex) {
-      const matchesQid = grepRegex.test(qid);
-      const matchesCell = Object.values(row.cells).some((c) => grepRegex!.test(c.display));
-      if (!matchesQid && !matchesCell) continue;
-    } else if (query.grep) {
-      const qLower = query.grep.toLowerCase();
-      const matchesQid = qid.toLowerCase().includes(qLower);
-      const matchesCell = Object.values(row.cells).some((c) => c.display.toLowerCase().includes(qLower));
+    if (grepMatch) {
+      const matchesQid = grepMatch(qid);
+      const matchesCell = Object.values(row.cells).some((c) => grepMatch(c.display));
       if (!matchesQid && !matchesCell) continue;
     }
 

@@ -129,6 +129,7 @@ export async function recordRun(cwd: string, input: RunInput): Promise<RunManife
     git: input.git,
   };
   await writeFile(path.join(dir, "run.json"), JSON.stringify(manifest, null, 2) + "\n");
+  manifestCache = null; // a recorded run invalidates the manifest cache for every reader
   return manifest;
 }
 
@@ -164,7 +165,23 @@ export async function loadAllManifests(dirOrCwd: string): Promise<RunManifest[]>
     const m = await readManifest(path.join(root, ent.name));
     if (m) manifests.push(m);
   }
-  return manifests.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  const sorted = manifests.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  manifestCache = { root, at: Date.now(), manifests: sorted };
+  return sorted;
+}
+
+const MANIFEST_CACHE_TTL_MS = 2000;
+let manifestCache: { root: string; at: number; manifests: RunManifest[] } | null = null;
+
+/**
+ * loadAllManifests behind a short TTL. recordRun invalidates on every write, so no
+ * run-recording path (CLI, dashboard, watch) can leave readers stale.
+ */
+export async function cachedManifests(dirOrCwd: string): Promise<RunManifest[]> {
+  const root = dirOrCwd.endsWith("history") ? dirOrCwd : historyDir(dirOrCwd);
+  if (manifestCache && manifestCache.root === root && Date.now() - manifestCache.at < MANIFEST_CACHE_TTL_MS)
+    return manifestCache.manifests;
+  return loadAllManifests(root);
 }
 
 export interface RunSummary {
@@ -198,6 +215,7 @@ export async function listRuns(cwd: string): Promise<RunSummary[]> {
 export async function cleanRuns(cwd: string): Promise<number> {
   const runs = await listRuns(cwd);
   await rm(historyDir(cwd), { recursive: true, force: true });
+  manifestCache = null;
   return runs.length;
 }
 

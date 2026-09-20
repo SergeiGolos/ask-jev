@@ -2,12 +2,12 @@ import http from "node:http";
 import { glob, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { expandAskNames, resolveConfig } from "./config.ts";
+import { expandAskNames } from "./config.ts";
 import { isRecord } from "./guards.ts";
 import { buildMatrixData, buildTreeData, githubRepoUrl, type MatrixQuery } from "./matrix.ts";
-import { historyDir as getHistoryDir, loadAllManifests, readPair, type PairRecord, type RunManifest } from "./history.ts";
+import { cachedManifests, historyDir as getHistoryDir, readPair, type PairRecord } from "./history.ts";
 import { renderReportHtml } from "./report.ts";
-import { runAsk, type RunResult } from "./run.ts";
+import { MissingKeyError, invokeRun, type RunResult } from "./run.ts";
 import { startWatcher, type RunningWatcher } from "./watch.ts";
 import { AskExistsError, AskNotFoundError, InvalidAskNameError, openAskStore, type AskDetail } from "./askstore.ts";
 
@@ -25,7 +25,6 @@ export interface ServerOptions {
   cwd?: string;
   port?: number;
   host?: string;
-  initialManifests?: RunManifest[];
   /** Judge transport seam for /api/run; tests inject a stub. */
   fetchImpl?: typeof fetch;
   /** Notified when a dashboard-triggered run completes; `ask serve` prints the result to its terminal. */
@@ -116,20 +115,8 @@ export function createServer(options: ServerOptions = {}): http.Server {
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
   const webDir = path.resolve(currentDir, "web");
 
-  let cachedManifests: RunManifest[] | null = options.initialManifests ?? null;
-  let cacheTimestamp = options.initialManifests ? Date.now() : 0;
-
-  async function getManifests(): Promise<RunManifest[]> {
-    const now = Date.now();
-    if (cachedManifests && now - cacheTimestamp < 2000) {
-      return cachedManifests;
-    }
-    cachedManifests = await loadAllManifests(historyDir);
-    cacheTimestamp = now;
-    return cachedManifests;
-  }
-
   const store = openAskStore(cwd);
+  const getManifests = () => cachedManifests(historyDir);
 
   return http.createServer(async (req, res) => {
     try {
@@ -378,24 +365,26 @@ export function createServer(options: ServerOptions = {}): http.Server {
           sendJson(res, 400, { error: "no files matched" });
           return;
         }
-        const key = (await resolveConfig(cwd)).apiKey;
-        if (!key) {
-          sendJson(res, 400, { error: "TYPESAFE_API_KEY is not set — put it in .questions/.env or export it" });
-          return;
-        }
         const batch = body.batch === true;
-        const result = await runAsk({
-          names: expandedAsks,
-          cwd,
-          argv: [...expandedAsks, ...(batch ? ["--batch"] : []), ...files.flatMap((f) => ["-f", f])],
-          files,
-          tokens: {},
-          batch,
-          key,
-          fetchImpl: options.fetchImpl,
-        });
-        cacheTimestamp = 0; // the next /api/* request re-reads the just-recorded run
-        options.onRun?.(result);
+        let result: RunResult;
+        try {
+          result = await invokeRun({
+            names: expandedAsks,
+            cwd,
+            home: options.home,
+            argv: [...expandedAsks, ...(batch ? ["--batch"] : []), ...files.flatMap((f) => ["-f", f])],
+            files,
+            batch,
+            fetchImpl: options.fetchImpl,
+            onRun: options.onRun,
+          });
+        } catch (err) {
+          if (err instanceof MissingKeyError) {
+            sendJson(res, 400, { error: err.message });
+            return;
+          }
+          throw err;
+        }
         sendJson(res, 200, {
           runId: result.manifest.runId,
           asks: result.manifest.asks.map((a) => ({ ask: a.ask, model: a.model })),
@@ -455,9 +444,7 @@ export function createServer(options: ServerOptions = {}): http.Server {
 
 export async function startServer(options: ServerOptions = {}): Promise<RunningServer> {
   const cwd = options.cwd ?? process.cwd();
-  const historyDir = getHistoryDir(cwd);
-  const initialManifests = options.initialManifests ?? (await loadAllManifests(historyDir));
-  const server = createServer({ cwd, initialManifests, fetchImpl: options.fetchImpl, onRun: options.onRun });
+  const server = createServer({ cwd, fetchImpl: options.fetchImpl, onRun: options.onRun });
   const host = options.host || "127.0.0.1";
   const preferredPort = options.port ?? 3000;
 

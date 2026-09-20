@@ -8,7 +8,7 @@ import { cleanRuns, findPreviousRunForFile, findRun, getPreviousAnswersForFile, 
 import { buildTreeData } from "./matrix.ts";
 import { BUILTIN } from "./render.ts";
 import { writeReport } from "./report.ts";
-import { runAsk, type RunResult } from "./run.ts";
+import { invokeRun, MissingKeyError, type RunResult } from "./run.ts";
 import { startServer } from "./serve.ts";
 import { newAskTemplate } from "./askfile.ts";
 
@@ -29,7 +29,7 @@ export async function main(argv: string[], cwdOverride?: string): Promise<number
   if (cmd === "show") return cmdShow(rest);
   if (cmd === "report") return cmdReport(rest);
   if (cmd === "serve") return cmdServe(rest);
-  return cmdRun(argv, config.cwd, config.apiKey);
+  return cmdRun(argv, config.cwd);
 }
 
 function usage(code: number): number {
@@ -295,32 +295,35 @@ export async function printRunResult(cwd: string, result: RunResult): Promise<vo
   if (table) console.log(table);
 }
 
-async function cmdRun(argv: string[], cwd: string = process.cwd(), apiKey?: string): Promise<number> {
+async function cmdRun(argv: string[], cwd: string = process.cwd()): Promise<number> {
   const flags = parseRunArgs(argv);
   if (flags.questions.length === 0) fail("needs at least one question name");
   const questions = await expandAskNames(flags.questions, cwd);
   if (questions.length === 0) fail("needs at least one question name");
-  const key = apiKey ?? process.env.TYPESAFE_API_KEY;
-  if (!key) throw new CliError("TYPESAFE_API_KEY is not set — put it in .questions/.env or export it");
   const multiAsk = questions.length > 1;
-  const result = await runAsk({
-    names: questions,
-    cwd,
-    argv,
-    files: flags.files,
-    tokens: flags.tokens,
-    batch: flags.batch,
-    key,
-    log: flags.verbose ? (line) => console.error(line) : undefined,
-    // Stream each file's answers to the console as soon as its judge call completes;
-    // the current run is not recorded yet, so "no beforeRunId" already means "prior runs".
-    onPair: flags.json
-      ? undefined
-      : async (p) => {
-          const prev = await getPreviousAnswersForFile(cwd, p.file, { ask: p.ask });
-          console.log(formatPair(multiAsk ? `${p.ask}: ${p.file}` : p.file, p.response, prev?.answers));
-        },
-  });
+  let result: RunResult;
+  try {
+    result = await invokeRun({
+      names: questions,
+      cwd,
+      argv,
+      files: flags.files,
+      tokens: flags.tokens,
+      batch: flags.batch,
+      log: flags.verbose ? (line) => console.error(line) : undefined,
+      // Stream each file's answers to the console as soon as its judge call completes;
+      // the current run is not recorded yet, so "no beforeRunId" already means "prior runs".
+      onPair: flags.json
+        ? undefined
+        : async (p) => {
+            const prev = await getPreviousAnswersForFile(cwd, p.file, { ask: p.ask });
+            console.log(formatPair(multiAsk ? `${p.ask}: ${p.file}` : p.file, p.response, prev?.answers));
+          },
+    });
+  } catch (err) {
+    if (err instanceof MissingKeyError) throw new CliError(err.message);
+    throw err;
+  }
   if (flags.json) {
     console.log(
       JSON.stringify(
@@ -393,7 +396,6 @@ Options:
   const running = await startServer({
     cwd: targetPath,
     port,
-    initialManifests: manifests,
     watch,
     log: watch ? (line) => console.log(line) : undefined,
     onRun: (result) => {

@@ -4,11 +4,23 @@
   "description": "Run hand-authored ask configurations against files, judged by TypeSafe System One",
   "type": "module",
   "bin": {
-    "ask": "./src/cli.ts"
+    "ask": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SergeiGolos/ask-jev.git"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsc --noEmit && node --test test/"
+    "test": "tsc --noEmit && node --test test/",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -r src/web dist/web && chmod +x dist/cli.js",
+    "prepack": "npm run build && npm run test",
+    "build:pack": "npm pack"
   },
   "engines": {
     "node": ">=24"

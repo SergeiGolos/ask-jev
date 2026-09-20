@@ -57,14 +57,6 @@ test("buildTriggers compiles runnable asks' grep patterns; matchTriggers dedupes
   assert.deepEqual(matchTriggers(triggers, "README.md"), []);
 });
 
-test("trigger matching is case-insensitive regex with literal-substring fallback", () => {
-  const [t] = buildTriggers([{ name: "q", grep: ["\\.TS$"], isRunnable: true }]);
-  assert.ok(t!.test("src/a.ts"));
-  const [bad] = buildTriggers([{ name: "q", grep: ["a(b"], isRunnable: true }]);
-  assert.ok(bad!.test("src/a(b.ts"));
-  assert.ok(!bad!.test("src/ab.ts"));
-});
-
 async function fixture(): Promise<{ cwd: string; home: string }> {
   const cwd = await mkdtemp(path.join(tmpdir(), "aj-watch-"));
   const home = await mkdtemp(path.join(tmpdir(), "aj-watch-home-"));

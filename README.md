@@ -57,10 +57,14 @@ You need Node.js 24 or newer and a TypeSafe API key.
 2. Install the CLI globally:
 
 ```bash
-npm install -g ask-jev
+# Install the latest GitHub release
+npm install -g https://github.com/SergeiGolos/ask-jev/releases/latest/download/ask-jev-latest.tgz
+
+# Or install a specific version
+npm install -g https://github.com/SergeiGolos/ask-jev/releases/download/v0.1.0/ask-jev-0.1.0.tgz
 ```
 
-3. Configure your API key.
+This installs the `ask-jev` package and exposes the `ask` command in your PATH.
 
 You can set the key globally in your user profile so all projects can use it, or locally in a single project repository.
 
@@ -248,6 +252,7 @@ src/
 ├── matrix.ts       # Trend matrix query engine, time-series data, and rollups
 ├── serve.ts        # HTTP server hosting web dashboard & REST API
 ├── watch.ts        # Grep-trigger map and fs watcher for `ask serve --watch`
+├── grepmatch.ts    # The grep-matching convention (regex-i, substring fallback) shared by matrix and watch
 ├── config.ts       # Directory resolution (.questions vs ~/.questions)
 ├── env.ts          # Layered .env loader (.questions/.env & ~/.questions/.env)
 ├── uuid7.ts        # Time-sortable UUIDv7 generator

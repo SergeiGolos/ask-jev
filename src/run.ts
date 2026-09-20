@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { assertRunnable, readAsk } from "./askfile.ts";
-import { resolveAsk } from "./config.ts";
+import { resolveAsk, resolveConfig } from "./config.ts";
 import { askDirs } from "./askstore.ts";
 import { CliError } from "./errors.ts";
 import { recordRun, type GitStamp, type PairRecord, type RunManifest } from "./history.ts";
@@ -135,4 +135,52 @@ export async function runAsk(o: RunOptions): Promise<RunResult> {
     git: await gitStamp(cwd),
   });
   return { manifest, pairs };
+}
+
+/** No TypeSafe API key resolved; adapters map this to their own surface (exit code, HTTP 400, log line). */
+export class MissingKeyError extends Error {}
+
+export interface InvokeOptions {
+  /** Expanded ask names, in invocation order. */
+  names: string[];
+  /** Expanded file inputs. */
+  files: string[];
+  /** Positional argv as invoked, recorded verbatim in the manifest. */
+  argv: string[];
+  tokens?: Record<string, string>;
+  batch?: boolean;
+  cwd?: string;
+  /** Profile .questions home override for key resolution; tests point it at a tmp dir. */
+  home?: string;
+  fetchImpl?: typeof fetch;
+  log?: (line: string) => void;
+  onPair?: RunOptions["onPair"];
+  /** Fired once with the completed run. */
+  onRun?: (result: RunResult) => void;
+}
+
+/**
+ * The one run-invocation seam: key resolution, RunOptions assembly, runAsk, onRun notification.
+ * Every trigger origin (CLI, dashboard, watch) invokes runs through here, so what a run is —
+ * how it is keyed, recorded, and reported — cannot diverge between origins.
+ */
+export async function invokeRun(o: InvokeOptions): Promise<RunResult> {
+  const cwd = o.cwd ?? process.cwd();
+  const key = (await resolveConfig(cwd, o.home)).apiKey;
+  if (!key)
+    throw new MissingKeyError("TYPESAFE_API_KEY is not set — put it in .questions/.env or export it");
+  const result = await runAsk({
+    names: o.names,
+    argv: o.argv,
+    files: o.files,
+    tokens: o.tokens ?? {},
+    batch: o.batch,
+    log: o.log,
+    onPair: o.onPair,
+    key,
+    fetchImpl: o.fetchImpl,
+    cwd,
+  });
+  o.onRun?.(result);
+  return result;
 }

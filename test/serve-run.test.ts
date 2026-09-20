@@ -127,6 +127,26 @@ test("POST /api/run validates input and errors clearly", async () => {
   });
 });
 
+test("POST /api/run maps a missing API key to 400 with the canonical message", async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), "aj-serve-nokey-"));
+  const home = await mkdtemp(path.join(tmpdir(), "aj-serve-nokey-home-"));
+  await mkdir(path.join(cwd, ".questions"), { recursive: true });
+  await writeFile(path.join(cwd, ".questions", "review.md"), ASK);
+  await writeFile(path.join(cwd, "src.ts"), "const x = 1;\n");
+  const saved = process.env.TYPESAFE_API_KEY;
+  delete process.env.TYPESAFE_API_KEY;
+  const srv = await startServer({ cwd, home, port: 0, fetchImpl: judgeStub() });
+  try {
+    const out = await post(srv.url, JSON.stringify({ ask: "review", path: "src.ts" }));
+    assert.equal(out.status, 400);
+    assert.ok(typeof out.json === "object" && out.json !== null && "error" in out.json);
+    assert.equal(str(out.json.error), "TYPESAFE_API_KEY is not set — put it in .questions/.env or export it");
+  } finally {
+    await srv.close();
+    if (saved !== undefined) process.env.TYPESAFE_API_KEY = saved;
+  }
+});
+
 test("POST /api/run notifies the onRun hook with the finished result", async () => {
   const cwd = await fixture();
   const seen: { runId: unknown; files: unknown }[] = [];

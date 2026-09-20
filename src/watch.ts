@@ -6,8 +6,8 @@
 import { watch, type FSWatcher } from "node:fs";
 import path from "node:path";
 import { askDirs, openAskStore, type AskEntry } from "./askstore.ts";
-import { resolveConfig } from "./config.ts";
-import { runAsk, type RunResult } from "./run.ts";
+import { grepMatcher } from "./grepmatch.ts";
+import { invokeRun, type RunResult } from "./run.ts";
 
 /** One compiled grep→question pair. `test` matches a `/`-separated path relative to cwd. */
 export interface Trigger {
@@ -16,22 +16,11 @@ export interface Trigger {
   test: (relPath: string) => boolean;
 }
 
-/** Same convention as the matrix grep filter: case-insensitive regex, literal substring when invalid. */
-function matcher(raw: string): (relPath: string) => boolean {
-  try {
-    const re = new RegExp(raw, "i");
-    return (p) => re.test(p);
-  } catch {
-    const needle = raw.toLowerCase();
-    return (p) => p.toLowerCase().includes(needle);
-  }
-}
-
 export function buildTriggers(entries: readonly Pick<AskEntry, "name" | "grep" | "isRunnable">[]): Trigger[] {
   const out: Trigger[] = [];
   for (const e of entries) {
     if (!e.isRunnable) continue;
-    for (const raw of e.grep) out.push({ ask: e.name, raw, test: matcher(raw) });
+    for (const raw of e.grep) out.push({ ask: e.name, raw, test: grepMatcher(raw) });
   }
   return out;
 }
@@ -89,25 +78,20 @@ export async function startWatcher(o: WatchOptions = {}): Promise<RunningWatcher
   async function fire(rel: string): Promise<void> {
     const asks = matchTriggers(triggers, rel);
     if (asks.length === 0) return;
-    const key = (await resolveConfig(cwd)).apiKey;
-    if (!key) {
-      o.log?.(`[watch] ${rel} matched ${asks.join(", ")} but TYPESAFE_API_KEY is not set — skipped`);
-      return;
-    }
     o.log?.(`[watch] ${rel} → ${asks.join(", ")}`);
     try {
-      // ONE runAsk call: every matching ask × this file is recorded under a single run id.
-      const result = await runAsk({
+      // ONE invokeRun call: every matching ask × this file is recorded under a single run id.
+      await invokeRun({
         names: asks,
         cwd,
+        home: o.home,
         argv: ["--watch", ...asks, "-f", rel],
         files: [rel],
-        tokens: {},
-        key,
         fetchImpl: o.fetchImpl,
+        onRun: o.onRun,
       });
-      o.onRun?.(result);
     } catch (err) {
+      // A failed run never kills the watcher.
       o.log?.(`[watch] run failed for ${rel}: ${err instanceof Error ? err.message : err}`);
     }
   }
