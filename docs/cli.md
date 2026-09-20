@@ -100,7 +100,7 @@ ask history [run-id]
   - `ASK`: The ask name.
   - `PAIRS`: Total count of judged file pairs in the run.
 - **With `run-id`**: Displays the full manifest for a specific run. Accepts full UUIDv7 or unique leading prefix (e.g. first 8 characters).
-- **With `-f <file>`** (`ask-jev history [run-id] -f <file>`): Prints a diff of the file's answers between the selected run (default: the latest run that evaluated the file) and the most recent earlier run of the same ask covering that file. Numeric scores and choices show deltas (`(+1)`, `(-2)`, `(=)`); relabeled choices show `(was: <previous>)`. Errors when no run recorded the file, or when the given run did not evaluate it.
+- **With `-f <file>`** (`ask history [run-id] -f <file>`): Prints a diff of the file's answers between the selected run (default: the latest run that evaluated the file) and the most recent earlier run of the same ask covering that file. Numeric scores and choices show deltas (`(+1)`, `(-2)`, `(=)`); relabeled choices show `(was: <previous>)`. Errors when no run recorded the file, or when the given run did not evaluate it.
 
 ---
 

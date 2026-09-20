@@ -52,11 +52,15 @@ Hand-authored question configurations evaluated by **TypeSafe System One** (Jev)
   mkdir -p .questions
   echo "TYPESAFE_API_KEY=your_key_here" > .questions/.env
   ```
+- **Install the CLI** (command name: `ask`):
+  ```bash
+  npm install -g ask-jev
+  ```
 
 ### 2. Scaffold a Question
 
 ```bash
-npx ask-jev new review
+ask new review
 ```
 
 This creates `.questions/review.md` from the built-in template with front matter, prompt body, and question schema.
@@ -65,26 +69,26 @@ This creates `.questions/review.md` from the built-in template with front matter
 
 ```bash
 # Judge each matching file individually
-npx ask-jev review -f 'src/**/*.ts'
+ask review -f 'src/**/*.ts'
 
 # Run in batch mode (single judge call over all matched files)
-npx ask-jev review -f 'src/**/*.ts' --batch
+ask review -f 'src/**/*.ts' --batch
 
 # Generate an interactive HTML report
-npx ask-jev review -f src/cli.ts --html
+ask review -f src/cli.ts --html
 ```
 
 ### 4. Explore History and Trends
 
 ```bash
 # List past runs
-npx ask-jev history
+ask history
 
 # View raw request & response pair
-npx ask-jev show <run-id> 1
+ask show <run-id> 1
 
 # Launch the trend dashboard
-npx ask-jev serve
+ask serve
 ```
 
 ---

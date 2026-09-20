@@ -1,6 +1,6 @@
 # Ask Markdown Format
 
-Every ask configuration in `ask-jev` is a single markdown file located in `.questions/<name>.md` (or `~/.questions/<name>.md`).
+Every ask configuration in `ask` is a single markdown file located in `.questions/<name>.md` (or `~/.questions/<name>.md`).
 
 An ask file is composed of four distinct sections, in order:
 1. **YAML Front Matter**: Execution metadata and default arguments.
