@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { formatPair, runTable, type RunTablePair } from "./answers.ts";
-import { askDirs, expandAskNames, listAsks, resolveConfig } from "./config.ts";
+import { expandAskNames, resolveConfig } from "./config.ts";
+import { askDirs, AskExistsError, openAskStore } from "./askstore.ts";
 import { CliError } from "./errors.ts";
 import { cleanRuns, findPreviousRunForFile, findRun, getPreviousAnswersForFile, getRunReportPath, historyDir, listRuns, readPair, type RunManifest } from "./history.ts";
 import { buildTreeData, loadAllManifests } from "./matrix.ts";
@@ -51,7 +51,7 @@ Usage:
 }
 
 async function cmdList(): Promise<number> {
-  const asks = await listAsks();
+  const asks = await openAskStore().list();
   if (asks.length === 0) {
     const { folder, profile } = askDirs();
     console.log(`no asks found (looked in ${folder} and ${profile})`);
@@ -142,19 +142,13 @@ export async function cmdNew(name: string, rest: string[], cwd: string = process
   const unsupported = rest.filter((a) => a !== "--force");
   if (unsupported.length > 0) fail(`new takes only --force, got '${unsupported.join(" ")}'`);
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(name)) fail(`invalid ask name '${name}': use letters, digits, '-', '_'`);
-  const dir = path.join(cwd, ".questions");
-  const file = path.join(dir, `${name}.md`);
-  if (!force) {
-    let exists = false;
-    try {
-      exists = (await stat(file)).isFile();
-    } catch {
-      // absent — the good case
-    }
-    if (exists) fail(`ask already exists: ${file} (use --force to overwrite)`);
+  const file = path.join(cwd, ".questions", `${name}.md`);
+  try {
+    await openAskStore(cwd).create(name, { content: newAskTemplate(name), overwrite: force });
+  } catch (err) {
+    if (err instanceof AskExistsError) fail(`ask already exists: ${file} (use --force to overwrite)`);
+    throw err;
   }
-  await mkdir(dir, { recursive: true });
-  await writeFile(file, newAskTemplate(name));
   console.log(`created ${file}
 edit it, then run: ask ${name} -f <file>`);
   return 0;

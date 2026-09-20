@@ -1,14 +1,14 @@
 import http from "node:http";
-import { glob, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { glob, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { askDirs, expandAskNames, resolveConfig } from "./config.ts";
+import { expandAskNames, resolveConfig } from "./config.ts";
 import { isRecord } from "./guards.ts";
 import { buildMatrixData, buildTreeData, loadAllManifests, type MatrixQuery } from "./matrix.ts";
 import { historyDir as getHistoryDir, readPair, type PairRecord, type RunManifest } from "./history.ts";
 import { renderReportHtml } from "./report.ts";
 import { runAsk, type RunResult } from "./run.ts";
-import { isRunnable, newAskTemplate, parseAsk } from "./askfile.ts";
+import { AskExistsError, AskNotFoundError, InvalidAskNameError, openAskStore, type AskDetail } from "./askstore.ts";
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -48,25 +48,59 @@ async function filesUnder(pattern: string, cwd: string): Promise<string[]> {
   return out.sort();
 }
 
-/** Normalize and validate a path inside a .questions directory to prevent traversal. */
-function safeQuestionPath(dir: string, input: string): { fullPath: string; relPath: string } | null {
-  if (!input || typeof input !== "string") return null;
-  let clean = input.trim().split(path.sep).join("/");
-  if (!clean.toLowerCase().endsWith(".md")) clean += ".md";
-  clean = clean.replace(/^\/+/, "");
-  const parts = clean.split("/");
-  if (parts.some((p) => p === ".." || p === "." || p === "")) return null;
-  if (parts[0] === "history") return null;
-  const fullPath = path.resolve(dir, clean);
-  const rel = path.relative(dir, fullPath);
-  if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
-  return { fullPath, relPath: clean };
-}
-
 async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
   let raw = "";
   for await (const chunk of req) raw += chunk;
   return raw ? JSON.parse(raw) : {};
+}
+
+function sendJson(res: http.ServerResponse, statusCode: number, data: unknown): void {
+  const payload = JSON.stringify(data);
+  res.writeHead(statusCode, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Content-Length": Buffer.byteLength(payload),
+    "Cache-Control": "no-cache",
+  });
+  res.end(payload);
+}
+
+/** Read a JSON object body or respond 400; null means the response is already sent. */
+async function readObjectBody(req: http.IncomingMessage, res: http.ServerResponse): Promise<Record<string, unknown> | null> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    sendJson(res, 400, { error: "invalid JSON body" });
+    return null;
+  }
+  if (!isRecord(body)) {
+    sendJson(res, 400, { error: "body must be an object" });
+    return null;
+  }
+  return body;
+}
+
+/** Map store errors to status codes; false means the error is not a store error — rethrow. */
+function sendStoreError(res: http.ServerResponse, err: unknown): boolean {
+  if (err instanceof InvalidAskNameError) sendJson(res, 400, { error: err.message });
+  else if (err instanceof AskNotFoundError) sendJson(res, 404, { error: err.message });
+  else if (err instanceof AskExistsError) sendJson(res, 409, { error: err.message });
+  else return false;
+  return true;
+}
+
+/** Wire shape for one ask, shared by GET/POST/PUT question endpoints. */
+function questionPayload(d: AskDetail): Record<string, unknown> {
+  return {
+    name: d.name,
+    path: d.path,
+    content: d.content,
+    meta: d.parsed?.meta ?? {},
+    schema: d.parsed?.schema ?? null,
+    isRunnable: d.isRunnable,
+    source: d.source,
+    parseError: d.parseError,
+  };
 }
 
 export function createServer(options: ServerOptions = {}): http.Server {
@@ -88,15 +122,7 @@ export function createServer(options: ServerOptions = {}): http.Server {
     return cachedManifests;
   }
 
-  function sendJson(res: http.ServerResponse, statusCode: number, data: unknown): void {
-    const payload = JSON.stringify(data);
-    res.writeHead(statusCode, {
-      "Content-Type": "application/json; charset=utf-8",
-      "Content-Length": Buffer.byteLength(payload),
-      "Cache-Control": "no-cache",
-    });
-    res.end(payload);
-  }
+  const store = openAskStore(cwd);
 
   return http.createServer(async (req, res) => {
     try {
@@ -116,273 +142,86 @@ export function createServer(options: ServerOptions = {}): http.Server {
       }
 
       if (isQuestions) {
-        const { folder, profile } = askDirs(cwd);
-
         // GET /api/questions or GET /api/questions?name=... or ?path=...
         if (req.method === "GET") {
           const target = parsedUrl.searchParams.get("name") || parsedUrl.searchParams.get("path");
           if (target) {
-            const folderTarget = safeQuestionPath(folder, target);
-            const profileTarget = safeQuestionPath(profile, target);
-            if (!folderTarget) {
-              sendJson(res, 400, { error: `invalid question name or path: ${target}` });
-              return;
-            }
-            let targetPath = folderTarget.fullPath;
-            let targetRel = folderTarget.relPath;
-            let source: "folder" | "profile" = "folder";
             try {
-              await stat(targetPath);
-            } catch {
-              if (profileTarget) {
-                try {
-                  await stat(profileTarget.fullPath);
-                  targetPath = profileTarget.fullPath;
-                  targetRel = profileTarget.relPath;
-                  source = "profile";
-                } catch {
-                  sendJson(res, 404, { error: `question not found: ${target}` });
-                  return;
-                }
-              } else {
-                sendJson(res, 404, { error: `question not found: ${target}` });
-                return;
-              }
+              sendJson(res, 200, questionPayload(await store.read(target)));
+            } catch (err) {
+              if (!sendStoreError(res, err)) throw err;
             }
-            const content = await readFile(targetPath, "utf8");
-            let meta = {};
-            let schema = null;
-            let runnable = false;
-            let parseError: string | null = null;
-            try {
-              const parsed = parseAsk(content, targetRel);
-              meta = parsed.meta;
-              schema = parsed.schema;
-              runnable = isRunnable(parsed);
-            } catch (err: unknown) {
-              parseError = err instanceof Error ? err.message : String(err);
-            }
-            sendJson(res, 200, {
-              name: targetRel.replace(/\.md$/i, ""),
-              path: targetRel,
-              content,
-              meta,
-              schema,
-              isRunnable: runnable,
-              source,
-              parseError,
-            });
             return;
           }
-
-          // List questions
-          const questionsMap = new Map<string, {
-            name: string;
-            path: string;
-            description: string;
-            model: string;
-            args: Record<string, unknown>;
-            isRunnable: boolean;
-            source: "folder" | "profile";
-            mtime: number;
-          }>();
-
-          for (const [dir, source] of [[profile, "profile"], [folder, "folder"]] as const) {
-            let entries: string[];
-            try {
-              entries = (await readdir(dir, { recursive: true }))
-                .map((f) => f.split(path.sep).join("/"))
-                .filter((f) => f.toLowerCase().endsWith(".md") && !f.startsWith("history/") && !/(^|\/)\.[^/]+/.test(f));
-            } catch {
-              continue;
-            }
-            for (const entry of entries) {
-              const fullPath = path.join(dir, entry);
-              const name = entry.replace(/\.md$/i, "");
-              try {
-                const st = await stat(fullPath);
-                const text = await readFile(fullPath, "utf8");
-                let parsed = null;
-                let runnable = false;
-                try {
-                  parsed = parseAsk(text, fullPath);
-                  runnable = isRunnable(parsed);
-                } catch {}
-                questionsMap.set(name, {
-                  name,
-                  path: entry,
-                  description: parsed?.meta.description ?? "",
-                  model: parsed?.meta.model ?? "-",
-                  args: (parsed?.meta.args as Record<string, unknown>) ?? {},
-                  isRunnable: runnable,
-                  source,
-                  mtime: st.mtimeMs,
-                });
-              } catch {}
-            }
-          }
-          const questions = Array.from(questionsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
-          sendJson(res, 200, { questions });
+          sendJson(res, 200, { questions: await store.list() });
           return;
         }
 
-        // POST /api/questions or POST /api/questions/move
+        // POST /api/questions/move
+        if (req.method === "POST" && pathname === "/api/questions/move") {
+          const body = await readObjectBody(req, res);
+          if (body === null) return;
+          const from = typeof body.from === "string" ? body.from : "";
+          const to = typeof body.to === "string" ? body.to : "";
+          try {
+            sendJson(res, 200, { success: true, ...(await store.move(from, to)) });
+          } catch (err) {
+            if (!sendStoreError(res, err)) throw err;
+          }
+          return;
+        }
+
+        // POST /api/questions — create
         if (req.method === "POST") {
-          let body: unknown;
+          const body = await readObjectBody(req, res);
+          if (body === null) return;
+          const name = typeof body.name === "string" ? body.name : "";
           try {
-            body = await readJsonBody(req);
-          } catch {
-            sendJson(res, 400, { error: "invalid JSON body" });
-            return;
+            const detail = await store.create(name, {
+              content: typeof body.content === "string" ? body.content : undefined,
+              overwrite: Boolean(body.overwrite),
+            });
+            sendJson(res, 201, questionPayload(detail));
+          } catch (err) {
+            if (!sendStoreError(res, err)) throw err;
           }
-          if (!isRecord(body)) {
-            sendJson(res, 400, { error: "body must be an object" });
-            return;
-          }
-
-          if (pathname === "/api/questions/move") {
-            const fromStr = typeof body.from === "string" ? body.from : "";
-            const toStr = typeof body.to === "string" ? body.to : "";
-            const fromTarget = safeQuestionPath(folder, fromStr);
-            const toTarget = safeQuestionPath(folder, toStr);
-            if (!fromTarget || !toTarget) {
-              sendJson(res, 400, { error: "invalid 'from' or 'to' path" });
-              return;
-            }
-            try {
-              await stat(fromTarget.fullPath);
-            } catch {
-              sendJson(res, 404, { error: `source question not found: ${fromStr}` });
-              return;
-            }
-            const dstExists = await stat(toTarget.fullPath).then(() => true).catch(() => false);
-            if (dstExists) {
-              sendJson(res, 409, { error: `destination already exists: ${toTarget.relPath}` });
-              return;
-            }
-            await mkdir(path.dirname(toTarget.fullPath), { recursive: true });
-            await rename(fromTarget.fullPath, toTarget.fullPath);
-            cacheTimestamp = 0;
-            sendJson(res, 200, { success: true, from: fromTarget.relPath, to: toTarget.relPath });
-            return;
-          }
-
-          // Create new question
-          const nameStr = typeof body.name === "string" ? body.name : "";
-          const target = safeQuestionPath(folder, nameStr);
-          if (!target) {
-            sendJson(res, 400, { error: `invalid question name: ${nameStr}` });
-            return;
-          }
-          const exists = await stat(target.fullPath).then(() => true).catch(() => false);
-          if (exists && !body.overwrite) {
-            sendJson(res, 409, { error: `question already exists: ${target.relPath}` });
-            return;
-          }
-          const content = typeof body.content === "string"
-            ? body.content
-            : newAskTemplate(target.relPath.replace(/\.md$/i, ""));
-          await mkdir(path.dirname(target.fullPath), { recursive: true });
-          await writeFile(target.fullPath, content, "utf8");
-          cacheTimestamp = 0;
-          let meta = {};
-          let schema = null;
-          let runnable = false;
-          let parseError: string | null = null;
-          try {
-            const parsed = parseAsk(content, target.relPath);
-            meta = parsed.meta;
-            schema = parsed.schema;
-            runnable = isRunnable(parsed);
-          } catch (err: unknown) {
-            parseError = err instanceof Error ? err.message : String(err);
-          }
-          sendJson(res, 201, {
-            name: target.relPath.replace(/\.md$/i, ""),
-            path: target.relPath,
-            content,
-            meta,
-            schema,
-            isRunnable: runnable,
-            parseError,
-          });
           return;
         }
 
-        // PUT /api/questions - Save/update question content
+        // PUT /api/questions — save/update content
         if (req.method === "PUT") {
-          let body: unknown;
-          try {
-            body = await readJsonBody(req);
-          } catch {
-            sendJson(res, 400, { error: "invalid JSON body" });
-            return;
-          }
-          if (!isRecord(body) || typeof body.content !== "string") {
+          const body = await readObjectBody(req, res);
+          if (body === null) return;
+          if (typeof body.content !== "string") {
             sendJson(res, 400, { error: "body must include content string" });
             return;
           }
-          const nameStr = typeof body.name === "string" ? body.name : typeof body.path === "string" ? body.path : "";
-          const target = safeQuestionPath(folder, nameStr);
-          if (!target) {
-            sendJson(res, 400, { error: `invalid question name or path: ${nameStr}` });
-            return;
-          }
-          await mkdir(path.dirname(target.fullPath), { recursive: true });
-          await writeFile(target.fullPath, body.content, "utf8");
-          cacheTimestamp = 0;
-          let meta = {};
-          let schema = null;
-          let runnable = false;
-          let parseError: string | null = null;
+          const name = typeof body.name === "string" ? body.name : typeof body.path === "string" ? body.path : "";
           try {
-            const parsed = parseAsk(body.content, target.relPath);
-            meta = parsed.meta;
-            schema = parsed.schema;
-            runnable = isRunnable(parsed);
-          } catch (err: unknown) {
-            parseError = err instanceof Error ? err.message : String(err);
+            sendJson(res, 200, { ...questionPayload(await store.save(name, body.content)), saved: true });
+          } catch (err) {
+            if (!sendStoreError(res, err)) throw err;
           }
-          sendJson(res, 200, {
-            name: target.relPath.replace(/\.md$/i, ""),
-            path: target.relPath,
-            meta,
-            schema,
-            isRunnable: runnable,
-            parseError,
-            saved: true,
-          });
           return;
         }
 
-        // DELETE /api/questions - Delete question
+        // DELETE /api/questions
         if (req.method === "DELETE") {
-          let targetStr = parsedUrl.searchParams.get("name") || parsedUrl.searchParams.get("path") || "";
-          if (!targetStr) {
+          let name = parsedUrl.searchParams.get("name") || parsedUrl.searchParams.get("path") || "";
+          if (!name) {
             try {
               const body = await readJsonBody(req);
               if (isRecord(body)) {
-                if (typeof body.name === "string") targetStr = body.name;
-                else if (typeof body.path === "string") targetStr = body.path;
+                if (typeof body.name === "string") name = body.name;
+                else if (typeof body.path === "string") name = body.path;
               }
             } catch {}
           }
-          const target = safeQuestionPath(folder, targetStr);
-          if (!target) {
-            sendJson(res, 400, { error: `invalid question name or path: ${targetStr}` });
-            return;
-          }
           try {
-            await unlink(target.fullPath);
-          } catch (err: unknown) {
-            if (typeof err === "object" && err !== null && "code" in err && err.code === "ENOENT") {
-              sendJson(res, 404, { error: `question not found: ${target.relPath}` });
-              return;
-            }
-            throw err;
+            sendJson(res, 200, { deleted: true, ...(await store.delete(name)) });
+          } catch (err) {
+            if (!sendStoreError(res, err)) throw err;
           }
-          cacheTimestamp = 0;
-          sendJson(res, 200, { deleted: true, name: target.relPath.replace(/\.md$/i, ""), path: target.relPath });
           return;
         }
 

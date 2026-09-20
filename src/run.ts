@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { assertRunnable, readAsk } from "./askfile.ts";
-import { askDirs, resolveAsk } from "./config.ts";
+import { resolveAsk } from "./config.ts";
+import { askDirs } from "./askstore.ts";
 import { CliError } from "./errors.ts";
 import { recordRun, type GitStamp, type PairRecord, type RunManifest } from "./history.ts";
 import { judge, type JudgeResult } from "./judge.ts";

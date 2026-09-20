@@ -47,5 +47,8 @@ The HTML view of a run's pairs, each expandable through three view levels: resul
 ## Trend matrix
 The tabular view mapping questions (rows) against chronological runs (columns) for an inspected file or directory, displaying scores, choices, and temporal deltas.
 
+## Ask store
+The module owning the `.questions` directories: discovery (`list`) and CRUD (`read`/`create`/`save`/`move`/`delete`) over ask files. Owns path-traversal safety, the folder-shadows-profile rule, and the parse-error policy; the CLI and trend server both adapt it.
+
 ## Trend server
 The local HTTP service (`ask serve`) providing the trend matrix UI and query endpoints over history.

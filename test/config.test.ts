@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { resolveAsk, listAsks, resolveConfig } from "../src/config.ts";
+import { resolveAsk, resolveConfig } from "../src/config.ts";
 
 /** Fixture layout: fake HOME with a profile .questions, fake project dir with a folder .questions. */
 async function makeFixture() {
@@ -39,27 +39,6 @@ test("profile-only ask resolves from the profile dir", async () => {
 test("missing ask resolves to undefined", async () => {
   const { home, cwd } = await makeFixture();
   assert.equal(await resolveAsk("nope", cwd, home), undefined);
-});
-
-test("list shows both sources distinctly, folder model on clash", async () => {
-  const { home, cwd } = await makeFixture();
-  const asks = await listAsks(cwd, home);
-  assert.deepEqual(
-    asks.map((a) => [a.name, a.source, a.model]),
-    [
-      ["demo", "folder", "folder-model"],
-      ["only", "profile", "only-model"],
-    ],
-  );
-  assert.equal(asks.find((a) => a.name === "demo")?.description, "Demo ask");
-  assert.equal(asks.find((a) => a.name === "only")?.description, "");
-});
-
-test("list keeps going on a corrupt ask", async () => {
-  const { home, cwd } = await makeFixture();
-  await writeFile(path.join(cwd, ".questions", "broken.md"), "---\nmodel: 7\n---\n");
-  const asks = await listAsks(cwd, home);
-  assert.equal(asks.find((a) => a.name === "broken")?.model, "(invalid)");
 });
 
 test("resolveConfig layers profile and folder env without mutating process.env", async () => {
