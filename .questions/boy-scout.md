@@ -2,12 +2,12 @@
 description: "Boy Scout Rule check: visible neglect left in one file (markers, dead code, debris)"
 model: jev-latest
 schema:
-  pass:
+  rework:
     type: noul
-    instructions: "Does {{filename}} pass the Boy Scout standard: no unexecuted leftovers remain — no unowned TODO/FIXME/HACK markers, no commented-out code, no debug debris or dead code, consistent style end-to-end?"
+    instructions: "Does {{filename}} need rework per the Boy Scout Rule — do unowned TODO/FIXME/HACK markers, commented-out code, debug debris, dead code, or style seams remain in the file?"
     criteria:
-      true: "Passes — the file reads finished; everything in it executes or documents execution"
-      false: "Fails — visible neglect: unfinished-work markers, commented-out code, debug debris, dead code, or style seams"
+      true: "Needs rework — visible neglect left in the file"
+      false: "Passes — the file reads finished; everything executes or documents execution"
   orphan_todo_markers:
     type: score
     instructions: "Unfinished-Work Marker — TODO/FIXME/HACK/XXX comments with no ticket, owner, or date, especially several or stale-looking ones"

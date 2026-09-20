@@ -1,13 +1,13 @@
 ---
-description: "Per-file SOLID review: one pass flag plus a violation score per principle"
+description: "Per-file SOLID review: one pass/fail flag plus a violation score per principle"
 model: jev-latest
 schema:
-  pass:
+  rework:
     type: noul
-    instructions: "Does {{filename}} pass the SOLID standard: no principle shows its strong signal — no NotImplemented stubs, no type-switch dispatch in core logic, no hardwired news of low-level concretes in policy code, and concern mixing is mild?"
+    instructions: "Does {{filename}} need refactoring primarily because of SOLID violations — is any principle clearly violated, or are two or more principle smells present?"
     criteria:
-      true: "Passes — no principle violation warrants a rework"
-      false: "Fails — one principle clearly violated, or two or more smells present (automatic fail)"
+      true: "Needs rework — a SOLID violation warrants it"
+      false: "Passes — no principle violation warrants a rework"
   srp_violations:
     type: score
     instructions: "God Class — one class/module juggles several unrelated concerns (parse + persist + HTTP + format) whose helper methods form distinct clusters; multiple reasons to change in one file"

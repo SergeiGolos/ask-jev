@@ -2,12 +2,12 @@
 description: "KISS check: accidental complexity, cleverness, and over-engineering in one file"
 model: jev-latest
 schema:
-  pass:
+  rework:
     type: noul
-    instructions: "Does {{filename}} pass the KISS standard: every construct earns its place, complexity tracks the problem's essential complexity, nesting stays shallow, no speculative flexibility or unmeasured cleverness?"
+    instructions: "Does {{filename}} need rework to meet the KISS standard — is the same behavior expressible with visibly less code, nesting, or indirection, or does an optimization or clever trick lack measured justification?"
     criteria:
-      true: "Passes — nothing a reader must decode that the problem didn't force"
-      false: "Fails — the same behavior is expressible with visibly less code, nesting, or indirection"
+      true: "Needs rework — accidental complexity exceeds what the problem demands"
+      false: "Passes — every construct earns its place; complexity tracks the problem's essential complexity"
   long_method:
     type: score
     instructions: "Long Method — one function spans many lines, mixes several jobs, and cannot be summarized in a single sentence"
@@ -52,7 +52,7 @@ design) is the violation. The bar is not "short" but "nothing a reader must
 decode that the problem didn't force".
 
 Score each smell below 0 (absent) to 3 (severe) — the goal is a low score.
-`pass` is true only when every construct earns its place.
+`rework` is true when accidental complexity outruns the problem.
 
 Smells:
 - `long_method` — Long Method: one function spans many lines / mixes several jobs and cannot be summarized in a single sentence.

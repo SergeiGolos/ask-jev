@@ -2,12 +2,12 @@
 description: "Tell Don't Ask check: state pulled out of objects and decided externally"
 model: jev-latest
 schema:
-  pass:
+  rework:
     type: noul
-    instructions: "Does {{filename}} pass the Tell, Don't Ask standard: decisions about a type's state live inside the owning type (or the type is an explicitly pure data carrier) and every query is side-effect-free?"
+    instructions: "Does {{filename}} need rework to meet Tell, Don't Ask — is an object's state decided externally via accessor reads followed by mutations on that same object, or does a query-named method have side effects?"
     criteria:
-      true: "Passes — objects are told what to do; behavior lives with the data it governs"
-      false: "Fails — an object's state is decided externally via accessor reads followed by mutations on that same object"
+      true: "Needs rework — behavior doesn't live with the data it governs"
+      false: "Passes — objects are told what to do; queries are side-effect-free"
   anemic_domain_model:
     type: score
     instructions: "Anemic Domain Model — a domain-noun type (Order, Account, Invoice...) holds nothing but fields and accessors while sibling functions in the same file make all the rule decisions about that state"

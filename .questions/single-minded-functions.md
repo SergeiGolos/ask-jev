@@ -2,12 +2,12 @@
 description: "Single-Minded Functions check: functions doing exactly one thing at one abstraction level"
 model: jev-latest
 schema:
-  pass:
+  rework:
     type: noul
-    instructions: "Does {{filename}} pass the single-minded-functions standard: every function is small, single-level, and single-effect — no function visibly carries two responsibilities or hides a side effect its name doesn't state?"
+    instructions: "Does {{filename}} need rework per the single-minded-functions standard — does any function visibly carry two responsibilities (flag argument, sectioned body, 'and' name, long multi-step body) or hide a side effect its name doesn't state?"
     criteria:
-      true: "Passes — every function does one thing, readable as a single step"
-      false: "Fails — some function carries two responsibilities (flag argument, sectioned body, 'and' name, long multi-step body) or hides a side effect"
+      true: "Needs rework — some function does more than one thing"
+      false: "Passes — every function is small, single-level, and single-effect"
   long_function:
     type: score
     instructions: "Long Method — function body runs well past ~20-30 lines or one screen, so its steps can't be grasped at a glance"

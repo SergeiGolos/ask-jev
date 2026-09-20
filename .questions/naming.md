@@ -2,12 +2,12 @@
 description: "Naming check: intention-revealing, honest, consistent identifiers"
 model: jev-latest
 schema:
-  pass:
+  rework:
     type: noul
-    instructions: "Does {{filename}} pass the intention-revealing naming standard: no name misleads, and essentially all identifiers are intention-revealing, encoding-free, and convention-consistent?"
+    instructions: "Does {{filename}} need rework per the naming standard — does any name mislead, do type-prefix/noise-word/non-predicate-boolean failures occur more than once, or do three or more distinct naming smell types appear?"
     criteria:
-      true: "Passes — every identifier states what it holds/does and why it exists"
-      false: "Fails — a misleading name, or repeated encoding/noise/predicate failures, or 3+ distinct naming smell types"
+      true: "Needs rework — names mislead or obscure intent"
+      false: "Passes — identifiers are intention-revealing, encoding-free, and convention-consistent"
   meaningless_name:
     type: score
     instructions: "Meaningless Name — data, temp, foo, result, value, handleStuff standing in for a purpose-stating name"

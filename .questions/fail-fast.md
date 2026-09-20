@@ -2,12 +2,12 @@
 description: "Fail Fast check: hidden failures — swallowed errors, null/sentinel signals, deferred validation"
 model: jev-latest
 schema:
-  pass:
+  rework:
     type: noul
-    instructions: "Does {{filename}} pass the fail-fast standard: every caught exception ends up visible (knowingly handled expected failure, logged with context, or rethrown wrapped) and no failure is signaled via null/sentinel?"
+    instructions: "Does {{filename}} need rework per the fail-fast standard — is there any empty catch, null/-1-as-error return, silent impossible state, or mid-stack catch-all that hides a failure?"
     criteria:
-      true: "Passes — failures are immediate and visible"
-      false: "Fails — an empty catch, null/-1-as-error return, silent impossible state, or mid-stack catch-all hides a failure"
+      true: "Needs rework — a failure is being hidden"
+      false: "Passes — every caught failure is visible and no failure is signaled via null/sentinel"
   empty_catch_block:
     type: score
     instructions: "Empty Catch — catch block body is empty or only a comment, discarding the error entirely (exception swallowing)"

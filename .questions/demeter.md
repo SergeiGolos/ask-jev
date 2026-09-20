@@ -2,12 +2,12 @@
 description: "Law of Demeter check: chained navigation through other objects' internals"
 model: jev-latest
 schema:
-  pass:
+  rework:
     type: noul
-    instructions: "Does {{filename}} pass the Law of Demeter: all multi-dot expressions are recognized exemptions (fluent/builder flow, maps/arrays/containers, stdlib or value-object returns, newly created objects) and no method navigates 2+ getter hops through domain objects' internals?"
+    instructions: "Does {{filename}} need rework to meet the Law of Demeter — does any method navigate 2+ getter hops through domain objects' internals (beyond recognized exemptions like fluent builders, collections, and value-object returns)?"
     criteria:
-      true: "Passes — methods talk only to immediate friends"
-      false: "Fails — methods reach through collaborators' internals, especially repeated or null-guarded paths"
+      true: "Needs rework — methods reach through collaborators' internals"
+      false: "Passes — methods talk only to immediate friends; all multi-dot expressions are recognized exemptions"
   train_wreck:
     type: score
     instructions: "Message Chains — an expression navigates 3+ dots through domain getters/actions, e.g. a.getB().getC().doIt()"

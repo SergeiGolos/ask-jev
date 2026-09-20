@@ -2,12 +2,12 @@
 description: "DRY check: duplication, magic literals, and wrong abstractions in one file"
 model: jev-latest
 schema:
-  pass:
+  rework:
     type: noul
-    instructions: "Does {{filename}} pass the DRY standard: identical logic appears once, meaningful literals are named, and no helper uses flag/conditional switches to unify unrelated callers?"
+    instructions: "Does {{filename}} need rework to meet the DRY standard — do two blocks differ only in swapped literals or identifiers, does an unnamed meaningful literal appear three or more times, or does a helper need conditionals to serve its callers?"
     criteria:
-      true: "Passes — every piece of knowledge has a single authoritative representation"
-      false: "Fails — duplicated blocks, unnamed meaningful literals, or a wrong abstraction"
+      true: "Needs rework — knowledge is duplicated or the abstraction is wrong"
+      false: "Passes — every piece of knowledge has a single authoritative representation"
   clone_and_modify_block:
     type: score
     instructions: "Clone-and-Modify — two nearby blocks are token-identical except for a handful of swapped values"

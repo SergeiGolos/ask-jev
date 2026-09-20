@@ -2,12 +2,12 @@
 description: "YAGNI check: speculative code with no current use in one file"
 model: jev-latest
 schema:
-  pass:
+  rework:
     type: noul
-    instructions: "Does {{filename}} pass the YAGNI standard: no declaration whose removal would leave the file's observable behavior unchanged (beyond declared framework/test-hook exceptions)?"
+    instructions: "Does {{filename}} need rework to meet YAGNI — can you point to any declaration whose removal would leave the file's observable behavior unchanged (beyond declared framework/test-hook exceptions)?"
     criteria:
-      true: "Passes — everything in the file is exercised by a current code path"
-      false: "Fails — speculative members exist solely for an imagined future"
+      true: "Needs rework — speculative members exist solely for an imagined future"
+      false: "Passes — everything in the file is exercised by a current code path"
   unused_export:
     type: score
     instructions: "Unused Export — an exported class/function/constant that no code in the file references, exported on spec for callers that don't exist yet"
