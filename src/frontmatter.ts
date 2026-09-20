@@ -25,6 +25,7 @@ export type Scalar = string | number | boolean;
 export interface AskMeta {
   model?: string;
   args?: Record<string, Scalar>;
+  description?: string;
 }
 
 /** Validate the front-matter keys ask-jev understands; unknown keys pass through untouched. */
@@ -34,6 +35,11 @@ export function readAskMeta(data: Record<string, unknown>, source = "ask file"):
     if (typeof data.model !== "string")
       throw new Error(`${source}: front matter 'model' must be a string`);
     meta.model = data.model;
+  }
+  if (data.description !== undefined) {
+    if (typeof data.description !== "string")
+      throw new Error(`${source}: front matter 'description' must be a string`);
+    meta.description = data.description;
   }
   if (data.args !== undefined) {
     if (!isRecord(data.args))

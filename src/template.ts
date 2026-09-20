@@ -1,6 +1,8 @@
 /** Scaffold for `ask-jev new` — valid per the locked ask anatomy, renders without prompting. */
 export function newAskTemplate(name: string): string {
   return `---
+# One line naming the question this ask answers; ask-jev list shows it. Update it if you repurpose the ask.
+description: "Review one file for general code quality"
 # Judge model. Args are token defaults; -t name=value overrides them at run time.
 model: jev-latest
 args:

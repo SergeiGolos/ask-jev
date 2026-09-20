@@ -36,6 +36,11 @@ test("readAskMeta rejects non-scalar args and non-string model", () => {
   assert.throws(() => readAskMeta({ model: 7 }), /'model' must be a string/);
 });
 
+test("readAskMeta reads description and rejects non-string", () => {
+  assert.deepEqual(readAskMeta({ description: "What it answers" }), { description: "What it answers" });
+  assert.throws(() => readAskMeta({ description: 7 }), /'description' must be a string/);
+});
+
 test("readAskMeta names the source file in errors", () => {
   assert.throws(() => readAskMeta({ model: 7 }, "/tmp/x.md"), /\/tmp\/x\.md/);
 });

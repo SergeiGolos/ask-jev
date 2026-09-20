@@ -36,7 +36,7 @@ function usage(code: number): number {
   console.log(`ask-jev — run hand-authored asks, judged by TypeSafe System One
 
 Usage:
-  ask-jev list                                     list discovered asks (folder ./.questions shadows profile ~/.questions)
+  ask-jev list                                     list discovered asks with descriptions (folder ./.questions shadows profile ~/.questions)
   ask-jev new <name>                               scaffold a new ask
   ask-jev <question-name> -f <path|glob>...        run an ask, one judge call per file
         [-t name=value]... [--batch] [--verbose] [--json] [--html]
@@ -60,10 +60,11 @@ async function cmdList(): Promise<number> {
   const nameW = width((a) => a.name, "NAME");
   const srcW = width((a) => a.source, "SOURCE");
   const modelW = width((a) => a.model, "MODEL");
+  const descW = width((a) => a.description, "DESCRIPTION");
   const pad = (s: string, w: number) => s + " ".repeat(w - s.length);
-  console.log(`${pad("NAME", nameW)}  ${pad("SOURCE", srcW)}  ${pad("MODEL", modelW)}`);
+  console.log(`${pad("NAME", nameW)}  ${pad("SOURCE", srcW)}  ${pad("MODEL", modelW)}  DESCRIPTION`);
   for (const a of asks)
-    console.log(`${pad(a.name, nameW)}  ${pad(a.source, srcW)}  ${pad(a.model, modelW)}`);
+    console.log(`${pad(a.name, nameW)}  ${pad(a.source, srcW)}  ${pad(a.model, modelW)}  ${a.description}`);
   return 0;
 }
 

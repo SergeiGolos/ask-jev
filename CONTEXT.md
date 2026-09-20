@@ -8,6 +8,9 @@ A named, hand-authored question configuration: a markdown file `<name>.md` livin
 ## Ask name
 The ask's filename without the `.md` extension. `ask-jev <ask name>` invokes it.
 
+## Ask description
+The front-matter one-liner naming the question an ask answers. `ask-jev list` shows it, so an agent can pick the right ask without reading its body.
+
 ## Profile ask / Folder ask
 Profile ask: lives in `~/.questions`. Folder ask: lives in the `.questions` folder of the directory being analyzed. A folder ask shadows a profile ask of the same name.
 

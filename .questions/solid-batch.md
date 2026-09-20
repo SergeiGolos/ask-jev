@@ -1,4 +1,5 @@
 ---
+description: "Set-level SOLID-adherence verdict across many files in one judge call"
 model: jev-latest
 ---
 Review these source files as a set for SOLID adherence (Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion).

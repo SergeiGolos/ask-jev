@@ -13,6 +13,7 @@ import { newAskTemplate } from "../src/template.ts";
 test("the scaffold template parses into a valid ask", () => {
   const ask = parseAsk(newAskTemplate("review"), "review.md");
   assert.equal(ask.meta.model, "jev-latest");
+  assert.equal(ask.meta.description, "Review one file for general code quality");
   assert.deepEqual(ask.meta.args, { focus: "general quality" });
   assert.deepEqual(ask.tools, []); // guidance comment must not become a tool fence
   assert.deepEqual(Object.keys(ask.schema ?? {}), ["severity", "flag"]);

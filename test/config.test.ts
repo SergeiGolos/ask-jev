@@ -13,7 +13,10 @@ async function makeFixture() {
   await mkdir(path.join(cwd, ".questions"), { recursive: true });
   await writeFile(path.join(home, ".questions", "demo.md"), "---\nmodel: profile-model\n---\nprofile body\n");
   await writeFile(path.join(home, ".questions", "only.md"), "---\nmodel: only-model\n---\nprofile-only body\n");
-  await writeFile(path.join(cwd, ".questions", "demo.md"), "---\nmodel: folder-model\n---\nfolder body\n");
+  await writeFile(
+    path.join(cwd, ".questions", "demo.md"),
+    '---\ndescription: "Demo ask"\nmodel: folder-model\n---\nfolder body\n',
+  );
   return { home, cwd };
 }
 
@@ -48,6 +51,8 @@ test("list shows both sources distinctly, folder model on clash", async () => {
       ["only", "profile", "only-model"],
     ],
   );
+  assert.equal(asks.find((a) => a.name === "demo")?.description, "Demo ask");
+  assert.equal(asks.find((a) => a.name === "only")?.description, "");
 });
 
 test("list keeps going on a corrupt ask", async () => {

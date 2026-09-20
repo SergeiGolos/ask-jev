@@ -41,6 +41,7 @@ export interface AskEntry {
   source: AskSource;
   file: string;
   model: string;
+  description: string;
 }
 
 /** Every discovered ask; on a name clash the folder ask wins. */
@@ -61,13 +62,15 @@ export async function listAsks(cwd: string = process.cwd(), home: string = homed
       const file = path.join(dir, f);
       const name = f.replace(/\.md$/i, "");
       let model = "-";
+      let description = "";
       try {
         const meta = readAskMeta(splitFrontMatter(await readFile(file, "utf8")).data, file);
         if (meta.model !== undefined) model = meta.model;
+        if (meta.description !== undefined) description = meta.description;
       } catch {
         model = "(invalid)"; // ponytail: list keeps going on a corrupt ask; the real error surfaces at run time
       }
-      byName[name] = { name, source, file, model }; // folder parsed after profile → folder wins on clash
+      byName[name] = { name, source, file, model, description }; // folder parsed after profile → folder wins on clash
     }
   }
   return Object.values(byName).sort((a, b) => a.name.localeCompare(b.name));

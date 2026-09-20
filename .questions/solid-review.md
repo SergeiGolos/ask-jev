@@ -1,4 +1,5 @@
 ---
+description: "Per-file SOLID-adherence review with a rework flag"
 model: jev-latest
 args:
   focus: "SOLID adherence"

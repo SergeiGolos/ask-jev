@@ -1,4 +1,5 @@
 ---
+description: "Holistic 0-10 gut-reaction scores of one file's code-health principles"
 model: jev-latest
 ---
 Gut-feeling review of `$filename`.
