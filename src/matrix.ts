@@ -1,8 +1,9 @@
 import path from "node:path";
 import { isRecord } from "./guards.ts";
 import { loadAllManifests, readPairResponse, type RunManifest, type PairRecord } from "./history.ts";
-import { parseAnswer, toneOf, type Direction, type ParsedAnswer, type Tone } from "./answers.ts";
-export { loadAllManifests, parseAnswer, type ParsedAnswer, type Tone };
+import { type Direction, type ParsedAnswer } from "./answers.ts";
+import { aggregateCell, parseAnswers } from "./scoring.ts";
+import { insert, newDir, type Dir } from "./pathtree.ts";
 
 const URL_RE = /^https?:\/\//;
 
@@ -121,16 +122,16 @@ export async function buildTreeData(historyDir: string, manifests: RunManifest[]
     }
   }
 
-  interface InternalDir {
-    name: string;
+  interface Leaf {
     path: string;
-    files: Map<string, { path: string; count: number; asks: string[] }>;
-    dirs: Map<string, InternalDir>;
+    count: number;
+    asks: string[];
   }
 
-  const rootDir: InternalDir = { name: "root", path: "", files: new Map(), dirs: new Map() };
+  const rootDir = newDir<Leaf>("root", "");
 
   for (const [filePath, info] of fileRunCounts.entries()) {
+    const leaf: Leaf = { path: filePath, count: info.count, asks: Array.from(info.asks) };
     if (URL_RE.test(filePath)) {
       // URL inputs render as leaves grouped under a virtual per-host directory (path = scheme://host).
       const schemeEnd = filePath.indexOf("://") + 3;
@@ -139,29 +140,16 @@ export async function buildTreeData(historyDir: string, manifests: RunManifest[]
       const hostPath = filePath.slice(0, slash === -1 ? filePath.length : schemeEnd + slash);
       let hostDir = rootDir.dirs.get(hostPath);
       if (!hostDir) {
-        hostDir = { name: rest.slice(0, slash === -1 ? rest.length : slash), path: hostPath, files: new Map(), dirs: new Map() };
+        hostDir = newDir<Leaf>(rest.slice(0, slash === -1 ? rest.length : slash), hostPath);
         rootDir.dirs.set(hostPath, hostDir);
       }
-      hostDir.files.set(filePath, { path: filePath, count: info.count, asks: Array.from(info.asks) });
+      insert(hostDir, [filePath], filePath, leaf);
       continue;
     }
-    const parts = filePath.split(path.sep);
-    let cur = rootDir;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const seg = parts[i]!;
-      let next = cur.dirs.get(seg);
-      if (!next) {
-        const nextPath = cur.path ? `${cur.path}/${seg}` : seg;
-        next = { name: seg, path: nextPath, files: new Map(), dirs: new Map() };
-        cur.dirs.set(seg, next);
-      }
-      cur = next;
-    }
-    const fileName = parts[parts.length - 1]!;
-    cur.files.set(fileName, { path: filePath, count: info.count, asks: Array.from(info.asks) });
+    insert(rootDir, filePath.split(path.sep), filePath, leaf);
   }
 
-  function convert(dir: InternalDir): TreeNode {
+  function convert(dir: Dir<Leaf>): TreeNode {
     const children: TreeNode[] = [];
     let totalRuns = 0;
 
@@ -273,14 +261,11 @@ export async function buildMatrixData(
       } catch {
         continue;
       }
-      if (!isRecord(respObj) || !isRecord(respObj.answers)) continue;
-
-      for (const [qid, ansRaw] of Object.entries(respObj.answers)) {
-        const parsed = parseAnswer(qid, ansRaw, directions[qid]);
-        let list = qAnswersMap.get(qid);
+      for (const parsed of parseAnswers(respObj, directions)) {
+        let list = qAnswersMap.get(parsed.q);
         if (!list) {
           list = [];
-          qAnswersMap.set(qid, list);
+          qAnswersMap.set(parsed.q, list);
         }
         list.push(parsed);
       }
@@ -293,50 +278,18 @@ export async function buildMatrixData(
         questionRowsMap.set(qid, row);
       }
 
-      if (answers.length === 1) {
-        const a = answers[0]!;
-        row.cells[m.runId] = {
-          runId: m.runId,
-          timestamp: m.timestamp,
-          value: a.numeric,
-          display: a.display,
-          tone: a.tone,
-          delta: null,
-          changed: false,
-        };
-      } else {
-        const numerics = answers.map((a) => a.numeric).filter((n): n is number => n !== null);
-        if (numerics.length > 0) {
-          const avg = numerics.reduce((sum, v) => sum + v, 0) / numerics.length;
-          const min = Math.min(...numerics);
-          const max = Math.max(...numerics);
-          const display = Number.isInteger(avg) ? String(avg) : avg.toFixed(1);
-          const tone = toneOf(avg, directions[qid]);
-          row.cells[m.runId] = {
-            runId: m.runId,
-            timestamp: m.timestamp,
-            value: avg,
-            display: `${display} (n=${numerics.length})`,
-            tone,
-            delta: null,
-            changed: false,
-            fileCount: numerics.length,
-            min,
-            max,
-          };
-        } else {
-          row.cells[m.runId] = {
-            runId: m.runId,
-            timestamp: m.timestamp,
-            value: null,
-            display: `${answers[0]?.display || "—"} (n=${answers.length})`,
-            tone: "mut",
-            delta: null,
-            changed: false,
-            fileCount: answers.length,
-          };
-        }
-      }
+      const agg = aggregateCell(answers);
+      row.cells[m.runId] = {
+        runId: m.runId,
+        timestamp: m.timestamp,
+        value: agg.value,
+        display: agg.display,
+        tone: agg.tone,
+        delta: null,
+        changed: false,
+        ...(agg.count > 1 ? { fileCount: agg.count } : {}),
+        ...(agg.min !== undefined ? { min: agg.min, max: agg.max } : {}),
+      };
     }
   }
 

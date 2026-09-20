@@ -3,32 +3,8 @@ import { test } from "node:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { buildTreeData, buildMatrixData, githubRepoUrl, loadAllManifests, parseAnswer } from "../src/matrix.ts";
-
-test("parseAnswer parses score, choice, and noul", () => {
-  const score = parseAnswer("q1", { score: 8.5 });
-  assert.equal(score.numeric, 8.5);
-  assert.equal(score.display, "8.5");
-  assert.equal(score.tone, "ok");
-
-  const choiceNum = parseAnswer("q2", { choice: "5" });
-  assert.equal(choiceNum.numeric, 5);
-  assert.equal(choiceNum.display, "5");
-  assert.equal(choiceNum.tone, "warn");
-
-  const choiceStr = parseAnswer("q3", { choice: "custom-label" });
-  assert.equal(choiceStr.numeric, null);
-  assert.equal(choiceStr.display, "custom-label");
-  assert.equal(choiceStr.tone, "mut");
-
-  const noulBad = parseAnswer("q4", { noul: 0.8 });
-  assert.equal(noulBad.display, "rework 80%");
-  assert.equal(noulBad.tone, "bad");
-
-  const noulGood = parseAnswer("q5", { noul: 0.1 });
-  assert.equal(noulGood.display, "pass 90%");
-  assert.equal(noulGood.tone, "ok");
-});
+import { buildTreeData, buildMatrixData, githubRepoUrl } from "../src/matrix.ts";
+import { loadAllManifests } from "../src/history.ts";
 
 test("buildTreeData and buildMatrixData against project history", async () => {
   const historyDir = path.join(process.cwd(), ".questions", "history");

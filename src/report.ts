@@ -1,8 +1,9 @@
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { isRecord } from "./guards.ts";
 import { findRun, latestRun, readPair, type PairRecord, type RunManifest } from "./history.ts";
-import { parseAnswer, toneOf, gradeOf, type ParsedAnswer as Answer, type Tone } from "./answers.ts";
+import { toneOf, gradeOf, type ParsedAnswer as Answer, type Tone } from "./answers.ts";
+import { parseAnswers } from "./scoring.ts";
+import { insert, newDir, type Dir } from "./pathtree.ts";
 
 const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -26,10 +27,7 @@ const fmt = (v: number): string => (Number.isInteger(v) ? String(v) : v.toFixed(
 
 function scoreFiles(pairs: { rec: PairRecord; request: string; response: unknown }[], directions: Record<string, "low">): FileScore[] {
   const scored = pairs.map((p) => {
-    const answers: Answer[] =
-      isRecord(p.response) && isRecord(p.response.answers)
-        ? Object.entries(p.response.answers).map(([q, a]) => parseAnswer(q, a, directions[q]))
-        : [];
+    const answers: Answer[] = parseAnswers(p.response, directions);
     const nums = answers.map((a) => a.v).filter((v): v is number => v !== null);
     const total = nums.length ? nums.reduce((s, v) => s + v, 0) / nums.length : null;
     return {
@@ -54,31 +52,16 @@ function scoreFiles(pairs: { rec: PairRecord; request: string; response: unknown
 
 // ── File Tree ────────────────────────────────────────────────────────────────
 
-interface TreeNode {
-  dirs: Map<string, TreeNode>;
-  files: { name: string; f: FileScore }[];
-}
-
-function buildTree(items: FileScore[]): TreeNode {
-  const root: TreeNode = { dirs: new Map(), files: [] };
+function buildTree(items: FileScore[]): Dir<FileScore> {
+  const root = newDir<FileScore>("", "");
   for (const it of items) {
     const parts = it.rec.file.split("/").filter(Boolean);
-    let node = root;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const seg = parts[i]!;
-      let next = node.dirs.get(seg);
-      if (!next) {
-        next = { dirs: new Map(), files: [] };
-        node.dirs.set(seg, next);
-      }
-      node = next;
-    }
-    node.files.push({ name: parts.at(-1) ?? it.rec.file, f: it });
+    insert(root, parts, it.rec.file, it);
   }
   return root;
 }
 
-function renderTree(node: TreeNode): string {
+function renderTree(node: Dir<FileScore>): string {
   const dirs = [...node.dirs.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(
@@ -86,10 +69,10 @@ function renderTree(node: TreeNode): string {
         `<details open class="tdir"><summary><span class="fld">▸</span> ${esc(name)}/</summary><div class="tchildren">${renderTree(child)}</div></details>`,
     );
 
-  const files = node.files
-    .sort((a, b) => a.name.localeCompare(b.name))
+  const files = [...node.files.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
     .map(
-      ({ name, f }) =>
+      ([name, f]) =>
         `<a class="tfile" href="#pair-${f.rec.n}" title="${esc(f.rec.file)}"><i class="dot ${f.tone}"></i><span class="tname">${esc(name)}</span><span class="tsc ${f.tone}">${f.total === null ? "—" : fmt(f.total)}</span></a>`,
     );
 
