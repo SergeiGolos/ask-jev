@@ -10,7 +10,7 @@ export interface JudgeNote {
   usage?: unknown;
   latencyMs?: number;
 }
-
+ 
 export interface PairRecord {
   n: number;
   /** The ask that judged this pair. */

@@ -238,6 +238,8 @@ navigate to the affected ask.
 - One global tooltip handler couples three producers via JSON-in-attributes.
 - `treeFilter` filtering is lost when the poller re-renders the tree (input keeps its text,
   items reset to visible until the next input event).
+- Dead code: `populateFilters` fills a `#runAskSelect` dropdown that does not exist in
+  index.html (null-guarded, so it fails silently).
 - Section 8 defines the target component structure that resolves these.
 
 ## 8. Target structure — component decomposition

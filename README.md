@@ -53,19 +53,49 @@ Follow these steps to set up `ask-jev`, ask your first question about a file, an
 
 You need Node.js 24 or newer and a TypeSafe API key.
 
-Install the CLI globally:
+1. Register for an API key at [TypeSafe](https://typesafe.ai) (or view the [TypeSafe Documentation](https://docs.typesafe.ai)).
+2. Install the CLI globally:
 
 ```bash
 npm install -g ask-jev
 ```
 
-Set your TypeSafe API key in your environment or in `.questions/.env`:
+3. Configure your API key.
+
+You can set the key globally in your user profile so all projects can use it, or locally in a single project repository.
+
+#### Option A: Set in your user profile (recommended)
+
+Save the key in `~/.questions/.env` so `ask` can find it across all your repositories:
+
+**macOS / Linux (bash/zsh):**
+```bash
+mkdir -p ~/.questions
+echo "TYPESAFE_API_KEY=your_key_here" >> ~/.questions/.env
+```
+
+**Windows (PowerShell):**
+```powershell
+New-Item -ItemType Directory -Force -Path "$HOME\.questions"
+Add-Content -Path "$HOME\.questions\.env" -Value "TYPESAFE_API_KEY=your_key_here"
+```
+
+**Windows (Command Prompt):**
+```cmd
+if not exist "%USERPROFILE%\.questions" mkdir "%USERPROFILE%\.questions"
+echo TYPESAFE_API_KEY=your_key_here >> "%USERPROFILE%\.questions\.env"
+```
+
+#### Option B: Set for a single project
+
+Save the key inside the current project folder:
 
 ```bash
 mkdir -p .questions
-echo "TYPESAFE_API_KEY=your_key_here" > .questions/.env
+echo "TYPESAFE_API_KEY=your_key_here" >> .questions/.env
 ```
 
+You can also pass `TYPESAFE_API_KEY` as an environment variable in your current terminal session.
 ### 2. Create your first question
 
 Create a starter question file:

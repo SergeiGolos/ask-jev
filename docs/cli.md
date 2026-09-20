@@ -14,12 +14,32 @@ When invoked with no arguments, `-h`, or `--help`, the CLI prints general usage 
 
 ### Environment & Authentication
 
-- `TYPESAFE_API_KEY`: Required to execute asks against the TypeSafe API.
-- Loaded automatically in layered order:
-  1. `~/.questions/.env` (profile level)
-  2. `./.questions/.env` (folder/project level, overrides profile)
-  3. Environment variables in the active shell (highest precedence, overrides `.env` files)
+`TYPESAFE_API_KEY`: Required to execute questions against the TypeSafe API. Register for an API key at [TypeSafe](https://typesafe.ai).
 
+The CLI loads environment variables in layered precedence:
+1. `~/.questions/.env` (profile level)
+2. `./.questions/.env` (folder/project level, overrides profile)
+3. Active shell environment variables (highest precedence, overrides `.env` files)
+
+#### Adding your API key to your profile
+
+**macOS / Linux:**
+```bash
+mkdir -p ~/.questions
+echo "TYPESAFE_API_KEY=your_key_here" >> ~/.questions/.env
+```
+
+**Windows (PowerShell):**
+```powershell
+New-Item -ItemType Directory -Force -Path "$HOME\.questions"
+Add-Content -Path "$HOME\.questions\.env" -Value "TYPESAFE_API_KEY=your_key_here"
+```
+
+**Windows (Command Prompt):**
+```cmd
+if not exist "%USERPROFILE%\.questions" mkdir "%USERPROFILE%\.questions"
+echo TYPESAFE_API_KEY=your_key_here >> "%USERPROFILE%\.questions\.env"
+```
 ---
 
 ## Commands
