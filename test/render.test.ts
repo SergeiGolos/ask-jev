@@ -14,13 +14,13 @@ const ASK = [
   "args:",
   "  focus: races",
   "---",
-  "Review $filename for $focus.",
+  "Review {{filename}} for {{focus}}.",
   "",
   "```shell",
-  "echo x $filename",
+  "echo x {{filename}}",
   "```",
   "",
-  "$content",
+  "{{content}}",
   "",
   "---",
   "severity:",
@@ -37,9 +37,9 @@ const BATCH_ASK = [
   "model: m",
   "---",
   "List:",
-  "$file",
+  "{{file}}",
   "",
-  "$content",
+  "{{content}}",
   "",
 ].join("\n");
 
@@ -109,7 +109,7 @@ test("per-file mode renders one prompt per file, in order", async () => {
   assert.ok(prompts[1]!.prompt.includes("top"));
 });
 
-test("batch mode: one prompt, $file list, $content under ## headings", async () => {
+test("batch mode: one prompt, {{file}} list, {{content}} under ## headings", async () => {
   const dir = await fixture();
   const prompts = await renderPrompts({
     ask: parseAsk(BATCH_ASK),
@@ -124,10 +124,10 @@ test("batch mode: one prompt, $file list, $content under ## headings", async () 
   );
 });
 
-test("$filename in batch mode is a run error", async () => {
+test("{{filename}} in batch mode is a run error", async () => {
   await assert.rejects(
     renderPrompts({
-      ask: parseAsk("---\nmodel: m\n---\n$filename\n"),
+      ask: parseAsk("---\nmodel: m\n---\n{{filename}}\n"),
       files: ["a.md"],
       tokens: {},
       batch: true,
@@ -140,7 +140,7 @@ test("missing token: prompted once per run, not per file", async () => {
   const dir = await fixture();
   let calls = 0;
   const prompts = await renderPrompts({
-    ask: parseAsk("---\nmodel: m\n---\nLimit: $limit\n"),
+    ask: parseAsk("---\nmodel: m\n---\nLimit: {{limit}}\n"),
     files: ["src/a.md", "src/b.md"],
     tokens: {},
     prompt: async (name) => {
@@ -159,18 +159,18 @@ test("missing token: prompted once per run, not per file", async () => {
 test("missing token with the default prompt adapter off-TTY is a hard error", async () => {
   await assert.rejects(
     renderPrompts({
-      ask: parseAsk("---\nmodel: m\n---\nLimit: $limit\n"),
-      files: ["src/a.md"],
-      tokens: {},
-      isTTY: () => false,
+    ask: parseAsk("---\nmodel: m\n---\nLimit: {{limit}}\n"),
+    files: ["src/a.md"],
+    tokens: {},
+    isTTY: () => false,
     }),
-    /missing token '\$limit'/,
+    /missing token '\{\{limit\}\}'/,
   );
 });
 
 test("a built-in referenced with no -f is a hard error, not a prompt", async () => {
   await assert.rejects(
-    renderPrompts({ ask: parseAsk("---\nmodel: m\n---\n$file\n"), files: [], tokens: {} }),
+    renderPrompts({ ask: parseAsk("---\nmodel: m\n---\n{{file}}\n"), files: [], tokens: {} }),
     /no -f input was given/,
   );
 });
@@ -197,9 +197,10 @@ test("expandInputs: globs expand sorted, patterns dedupe, misses and directories
   await assert.rejects(expandInputs(["src"], dir), /is a directory/);
 });
 
-test("placeholders extracts $names", () => {
-  assert.deepEqual(placeholders("$file and $filename_2 and $snug"), ["file", "filename_2", "snug"]);
-  assert.deepEqual(placeholders("no tokens, $9 or $"), []);
+test("placeholders extracts {{names}}, including inside sections", () => {
+  assert.deepEqual(placeholders("{{file}} and {{filename_2}} and {{snug}}"), ["file", "filename_2", "snug"]);
+  assert.deepEqual(placeholders("{{#sec}}{{inner}}{{/sec}}"), ["sec", "inner"]);
+  assert.deepEqual(placeholders("no tokens, {{! comment}} here"), []);
 });
 
 test("parseRunArgs: repeatable -f, -t k=v, boolean flags", () => {
@@ -254,7 +255,7 @@ test("expandInputs: URLs pass through verbatim, dedupe, and mix with files in or
   assert.deepEqual(files, [a, "src/a.md", "src/b.md", b]);
 });
 
-test("URL input: raw body as $content, $file/$filename are the URL", async () => {
+test("URL input: raw body as {{content}}, {{file}}/{{filename}} are the URL", async () => {
   const dir = await fixture();
   const srv = await serve("alpha\nbeta\n");
   try {

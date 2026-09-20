@@ -12,9 +12,9 @@ import { gitStamp, runAsk } from "../src/run.ts";
 const ASK = `---
 model: test-model
 ---
-Review $filename:
+Review {{filename}}:
 
-$content
+{{content}}
 
 ---
 severity:
@@ -72,7 +72,7 @@ test("runAsk batch: single call, file 'batch', prompt-only state", async () => {
   const cwd = await fixture();
   await writeFile(
     path.join(cwd, ".questions", "review.md"),
-    ASK.replace("$filename:", "$file:").replace("Review $filename:", "Review $file:"),
+    ASK.replace("{{filename}}:", "{{file}}:").replace("Review {{filename}}:", "Review {{file}}:"),
   );
   const states: unknown[] = [];
   const result = await runAsk({

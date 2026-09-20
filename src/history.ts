@@ -78,7 +78,7 @@ function slug(file: string): string {
 /** Request markdown with the ask's schema appended for reference. */
 function withSchema(request: string, schema: Questions | null): string {
   if (!schema || Object.keys(schema).length === 0) return request;
-  return `${request.replace(/\n$/, "")}\n\n---\n\n<!-- ask schema (reference only) -->\n\`\`\`yaml\n${stringifyYaml(schema)}\`\`\`\n`;
+  return `${request.replace(/\n$/, "")}\n\n---\n\n<!-- ask schema (reference only) -->\n\`\`\`schema\n${stringifyYaml(schema)}\`\`\`\n`;
 }
 
 /** Write one run directory: run.json + one request/response pair per judged file. */

@@ -17,8 +17,8 @@ test("the scaffold template parses into a valid ask", () => {
   assert.deepEqual(ask.meta.args, { focus: "general quality" });
   assert.deepEqual(ask.tools, []); // guidance comment must not become a tool fence
   assert.deepEqual(Object.keys(ask.schema ?? {}), ["severity", "flag"]);
-  assert.ok(ask.body.includes("$filename"));
-  assert.ok(ask.body.includes("$content"));
+  assert.ok(ask.body.includes("{{filename}}"));
+  assert.ok(ask.body.includes("{{content}}"));
 });
 
 test("the scaffold renders end-to-end without prompting", async () => {

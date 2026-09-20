@@ -2,18 +2,19 @@
 description: "Holistic 0-10 gut-reaction scores of one file's code-health principles"
 model: jev-latest
 ---
-Gut-feeling review of `$filename`.
+Gut-feeling review of `{{filename}}`.
 
 Read the whole file below, then rate it on each principle in the questions.
 For every question, pick the level description that best matches your honest
-gut reaction to `$filename`: the first criterion is 0 (worst), the last is 10
+gut reaction to `{{filename}}`: the first criterion is 0 (worst), the last is 10
 (best), and your score may land between levels. The descriptions anchor the
 scale — trust your overall instinct for the file within it.
 
 The complete file:
 
-$content
----
+{{content}}
+
+```schema
   kiss:
     type: choice
     instructions: "KISS (Keep It Simple): pick the 0-10 option whose description best matches the file."
@@ -224,3 +225,4 @@ $content
       "8": Strong use of assertions and early returns for invalid states.
       "9": Highly robust, invalid states are caught immediately.
       "10": Perfect early validation, impossible to enter invalid states.
+```

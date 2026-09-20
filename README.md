@@ -34,7 +34,7 @@ Hand-authored question configurations evaluated by **TypeSafe System One** (Jev)
     (Trend Matrix Dashboard)
 ```
 
-1. **Questions (`.questions/<name>.md`)**: An ask is a single markdown file defining execution metadata, a prompt template with `$token` placeholders, optional executable shell tool blocks, and a YAML questions schema.
+1. **Questions (`.questions/<name>.md`)**: An ask is a single markdown file defining execution metadata, a prompt template with `{{token}}` placeholders (Mustache), optional executable shell tool blocks, and a YAML questions schema.
 2. **Runs & History (`.questions/history/<runId>/`)**: Every run is assigned a time-sorted UUIDv7 identifier. The exact prompt rendered and the raw JSON response from the judge are persisted for every file, creating an immutable audit trail.
 3. **Reports & Visualization**:
    - **CLI Table / JSON**: Instant terminal scores and JSON output for CI scripting.
@@ -134,7 +134,7 @@ See [docs/cli.md](docs/cli.md) for detailed flag references, arguments, and exam
 
 An ask markdown file is composed of:
 1. **Front Matter**: `model` selection and default `args`.
-2. **Prompt Body**: Markdown text containing `$file`, `$filename`, `$content`, custom tokens, and optional ```shell tool fences.
+2. **Prompt Body**: Markdown text containing `{{file}}`, `{{filename}}`, `{{content}}`, custom tokens, and optional ```shell tool fences.
 3. **Separator**: The final standalone `---` line.
 4. **Questions Schema**: YAML defining `score`, `choice`, or `noul` questions.
 
@@ -145,10 +145,10 @@ args:
   focus: "code structure"
 ---
 
-Review $filename for $focus.
+Review {{filename}} for {{focus}}.
 
 Source:
-$content
+{{content}}
 
 ---
 

@@ -8,9 +8,9 @@ import { startServer, type RunningServer } from "../src/serve.ts";
 const ASK = `---
 model: test-model
 ---
-Review $filename:
+Review {{filename}}:
 
-$content
+{{content}}
 
 ---
 severity:
@@ -147,5 +147,35 @@ test("GET /api/run is method-not-allowed", async () => {
   await withServer(cwd, async (srv) => {
     const res = await fetch(`${srv.url}/api/run`);
     assert.equal(res.status, 405);
+  });
+});
+
+test("GET /api/runs lists recorded runs and /report renders the run HTML", async () => {
+  const cwd = await fixture();
+  await withServer(cwd, async (srv) => {
+    const run = await post(srv.url, JSON.stringify({ ask: "review", path: "src/a.ts" }));
+    assert.equal(run.status, 200);
+    assert.ok(typeof run.json === "object" && run.json !== null && "runId" in run.json);
+    const runId = str(run.json.runId);
+
+    const listRes = await fetch(`${srv.url}/api/runs`);
+    assert.equal(listRes.status, 200);
+    const list = await listRes.json() as { runs: { runId: string; ask: string; pairCount: number }[] };
+    assert.deepEqual(list.runs.map((r) => r.runId), [runId]);
+    assert.equal(list.runs[0]!.ask, "review");
+    assert.equal(list.runs[0]!.pairCount, 1);
+
+    const reportRes = await fetch(`${srv.url}/api/runs/${runId}/report`);
+    assert.equal(reportRes.status, 200);
+    assert.match(reportRes.headers.get("content-type") ?? "", /text\/html/);
+    const html = await reportRes.text();
+    assert.match(html, /ask report/);
+    assert.match(html, new RegExp(runId.slice(0, 8)));
+
+    const missing = await fetch(`${srv.url}/api/runs/00000000-0000-0000-0000-000000000000/report`);
+    assert.equal(missing.status, 404);
+
+    const traversal = await fetch(`${srv.url}/api/runs/..%2F..%2Fetc/report`);
+    assert.equal(traversal.status, 404); // regex rejects path separators
   });
 });

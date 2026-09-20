@@ -1,16 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseAsk, parseQuestions } from "../src/askfile.ts";
+import { assertRunnable, parseAsk, parseQuestions } from "../src/askfile.ts";
 
 const FULL = `---
 model: jev-latest
 args:
   focus: security
 ---
-Review $filename for $focus.
+Review {{filename}} for {{focus}}.
 
 \`\`\`shell
-todo --list $filename
+todo --list {{filename}}
 ---
 this --- must not split anything
 \`\`\`
@@ -47,9 +47,9 @@ test("full anatomy parses into meta, body, tools, schema", () => {
   assert.equal(ask.meta.model, "jev-latest");
   assert.deepEqual(ask.meta.args, { focus: "security" });
   assert.equal(ask.tools.length, 1);
-  assert.ok(ask.tools[0].includes("todo --list $filename"));
+  assert.ok(ask.tools[0].includes("todo --list {{filename}}"));
   assert.ok(ask.tools[0].includes("this --- must not split anything")); // in-fence --- stays tool code
-  assert.ok(ask.body.includes("Review $filename for $focus."));
+  assert.ok(ask.body.includes("Review {{filename}} for {{focus}}."));
   assert.ok(ask.body.includes("```shell")); // fences stay in the body; the renderer replaces them in place
   assert.ok(!ask.body.includes("severity")); // schema region is not body
   assert.deepEqual(Object.keys(ask.schema ?? {}), ["severity", "flag", "queue"]);
@@ -65,10 +65,10 @@ test("full anatomy parses into meta, body, tools, schema", () => {
 });
 
 test("an ask with no tools and no schema parses", () => {
-  const ask = parseAsk("Just review $file please.", "b.md");
+  const ask = parseAsk("Just review {{file}} please.", "b.md");
   assert.deepEqual(ask.tools, []);
   assert.equal(ask.schema, null);
-  assert.equal(ask.body, "Just review $file please.");
+  assert.equal(ask.body, "Just review {{file}} please.");
 });
 
 test("a --- inside a fence does not split when there is no schema", () => {
@@ -105,4 +105,62 @@ test("parseQuestions converts the YAML contract shape to JSON-ready questions", 
     s: { type: "score", instructions: "i", criteria: ["a", "b"] },
     c: { type: "choice", instructions: "i", criteria: { x: "rubric", y: null } },
   });
+});
+
+test("schema in front matter parses valid YAML configuration", () => {
+  const ask = parseAsk(`---
+description: "Front matter schema"
+model: test-model
+schema:
+  overall:
+    type: score
+    instructions: "Rate quality"
+    criteria:
+      - "Poor"
+      - "Good"
+---
+Review {{filename}}:
+
+{{content}}
+`);
+  assert.equal(ask.meta.model, "test-model");
+  assert.ok(ask.schema);
+  assert.equal(ask.schema["overall"]?.type, "score");
+  assert.equal(ask.body.trim(), "Review {{filename}}:\n\n{{content}}");
+});
+
+test("schema in fenced yaml block parses as valid YAML configuration", () => {
+  const ask = parseAsk(`---
+model: test-model
+---
+Review prompt here.
+
+\`\`\`yaml schema
+overall:
+  type: score
+  instructions: "Rate quality"
+  criteria:
+    - "Low"
+    - "High"
+\`\`\`
+`);
+  assert.ok(ask.schema);
+  assert.equal(ask.schema["overall"]?.type, "score");
+  assert.equal(ask.body.trim(), "Review prompt here.");
+});
+
+test("front matter schema enforces valid YAML mapping and question structure", () => {
+  assert.throws(
+    () => parseAsk("---\nmodel: m\nschema: 'not a mapping'\n---\nbody\n"),
+    /schema must be a mapping/,
+  );
+  assert.throws(
+    () => parseAsk("---\nmodel: m\nschema:\n  q:\n    type: unknown\n---\nbody\n"),
+    /'type' must be score, choice, or noul/,
+  );
+});
+
+test("assertRunnable requires valid schema configuration", () => {
+  const ask = parseAsk("---\nmodel: m\n---\nbody without schema\n");
+  assert.throws(() => assertRunnable(ask, "my-ask"), /has no questions schema/);
 });

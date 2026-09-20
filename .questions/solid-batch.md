@@ -6,13 +6,13 @@ Review these source files as a set for SOLID adherence (Single Responsibility, O
 
 Files:
 
-$file
+{{file}}
 
 Contents:
 
-$content
+{{content}}
 
----
+```schema
 overall:
   type: score
   instructions: "Overall, how strongly does this set of files adhere to the SOLID principles? Judge only evidence visible in the files."
@@ -22,3 +22,5 @@ overall:
     - "Mixed: partial adherence, clear violations remain"
     - "Mostly adherent; only minor violations"
     - "Exemplary adherence without over-engineering"
+```
+

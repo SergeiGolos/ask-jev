@@ -2,11 +2,10 @@
 
 Every ask configuration in `ask` is a single markdown file located in `.questions/<name>.md` (or `~/.questions/<name>.md`).
 
-An ask file is composed of four distinct sections, in order:
-1. **YAML Front Matter**: Execution metadata and default arguments.
+An ask file is composed of:
+1. **YAML Front Matter**: Execution metadata, default arguments, and judge questions schema (`schema:`).
 2. **Prompt Body**: The prompt sent to the judge, containing tokens and optional shell tool blocks.
-3. **Schema Separator**: The final standalone `---` separator outside any code blocks.
-4. **Questions Schema**: YAML defining the typed questions, rubrics, and evaluation criteria.
+*(Optional alternative: a ````yaml schema` code block in the body, or legacy trailing `---` section).*
 
 ---
 
@@ -17,36 +16,27 @@ An ask file is composed of four distinct sections, in order:
 model: jev-latest
 args:
   focus: "maintainability"
+schema:
+  quality:
+    type: score
+    instructions: "How clean and maintainable is this code?"
+    criteria:
+      - "Unacceptable or messy"
+      - "Adequate with minor issues"
+      - "Exemplary and clean"
 ---
 
 # Prompt Title
 
-Review the implementation of $filename with respect to $focus.
+Review the implementation of {{filename}} with respect to {{focus}}.
 
 The full source code:
 
-$content
+{{content}}
 
 ```shell
-git log -n 1 --oneline -- $file
+git log -n 1 --oneline -- {{file}}
 ```
-
----
-
-quality:
-  type: score
-  instructions: "How clean and maintainable is this code?"
-  criteria:
-    - "Unacceptable or messy"
-    - "Adequate with minor issues"
-    - "Exemplary and clean"
-
-flag:
-  type: noul
-  instructions: "Does this file require immediate rework?"
-  criteria:
-    true: "Immediate rework required"
-    false: "No immediate rework needed"
 ```
 
 ---
@@ -77,23 +67,23 @@ The prompt body is everything between the closing `---` of the front matter and 
 
 ### Token Substitution
 
-Tokens start with `$` followed by alphanumeric characters or underscores (e.g. `$file`, `$focus`).
+Templates use [Mustache](https://mustache.github.io/) syntax: `{{name}}` binds a value from the context by name (all interpolation is raw — no HTML escaping). Sections like `{{#name}}...{{/name}}` are supported; values here are plain strings, so a non-empty string is truthy.
 
 #### Built-in Tokens
 Built-in tokens are populated automatically from the `-f` flag inputs:
 
 | Token | Single File Mode (`-f <file>`) | Batch Mode (`--batch`) |
 |---|---|---|
-| `$file` | Target file path (e.g. `src/cli.ts`) | Newline-separated list of all matched file paths |
-| `$filename` | Base filename without directory (e.g. `cli.ts`) | **Error**: Forbidden in batch mode |
-| `$content` | Full text content of the target file | Formatted sections with headings: `## <path>\n\n<content>` |
+| `{{file}}` | Target file path (e.g. `src/cli.ts`) | Newline-separated list of all matched file paths |
+| `{{filename}}` | Base filename without directory (e.g. `cli.ts`) | **Error**: Forbidden in batch mode |
+| `{{content}}` | Full text content of the target file | Formatted sections with headings: `## <path>\n\n<content>` |
 
 > **Note**: Built-in tokens cannot be overridden with `-t`.
 
 #### Custom Tokens
 Any token defined in the front matter `args` mapping or passed via `-t name=value` will be substituted globally throughout the body and tool blocks:
 - Overriding: `-t focus="security"` overrides `args.focus`.
-- Validation: In non-interactive environments, any `$token` left unresolved causes the run to halt with an error.
+- Validation: In non-interactive environments, any `{{token}}` left unresolved causes the run to halt with an error.
 
 ### Tool Blocks (Shell Fences)
 
@@ -101,13 +91,13 @@ A fenced code block tagged with `shell` inside the prompt body executes locally 
 
 ````markdown
 ```shell
-git diff HEAD~1 -- $file
+git diff HEAD~1 -- {{file}}
 ```
 ````
 
 #### Tool Block Rules
 - Executed in a subprocess shell (`/bin/sh`) with current working directory set to the project root.
-- Tokens (both built-in like `$file` and custom args) are substituted inside the tool block before execution.
+- Tokens (both built-in like `{{file}}` and custom args) are substituted inside the tool block before execution.
 - Standard output (`stdout`) replaces the code fence in-place in the final rendered prompt.
 - Non-zero exit code or stderr halts the run with an error.
 - **Change/Diff analysis pattern**: To judge changes rather than file contents, author an ask with zero `-f` dependencies and a tool block running `git diff` or `git show`:
@@ -138,26 +128,35 @@ severity:
 
 ---
 
-## 3. Schema Separator
+## 3. Questions Schema Configuration
 
-The prompt body is separated from the questions schema by the **last standalone `---` line** outside of any code fences.
-- Any `---` dividers inside fenced blocks (such as markdown examples) are ignored by the separator parser.
-- Everything preceding the last `---` becomes the prompt body. Everything following the last `---` is parsed as the questions schema.
+For judge queries, questions schema configuration is required and must be valid YAML.
 
----
-
-## 4. Questions Schema
-
-The schema section is a YAML mapping of question identifiers to question configurations.
+The preferred approach is defining `schema:` directly inside the front matter:
 
 ```yaml
 ---
+description: "Code health review"
+model: jev-latest
+schema:
+  <question_id>:
+    type: <score | choice | noul>
+    instructions: "<prompt instructions for this question>"
+    criteria: <rubrics / options>
+---
+```
+
+Alternatively, questions can be configured in a fenced ````yaml schema` code block:
+
+````markdown
+```yaml schema
 <question_id>:
   type: <score | choice | noul>
   instructions: "<prompt instructions for this question>"
   criteria: <rubrics / options>
 ```
-
+````
+*(Legacy asks with questions following a final `---` divider are also supported for backward compatibility).*
 Supported question types:
 
 ### A. `score` Questions

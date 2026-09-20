@@ -3,6 +3,7 @@ import { glob, readFile, stat } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
+import Mustache from "mustache";
 import type { ParsedAsk } from "./askfile.ts";
 
 const execp = promisify(exec);
@@ -18,8 +19,10 @@ async function readUrl(url: string): Promise<string> {
 }
 
 /** Built-in tokens derived from -f; -t may not shadow them. */
-export const BUILTIN: ReadonlySet<string> = new Set(["file", "filename", "content"]);
-const TOKEN = /\$([A-Za-z_][A-Za-z0-9_]*)/g;
+export const BUILTIN: Record<string, true> = { file: true, filename: true, content: true };
+
+// Prompts are plain text, not HTML: mustache's default escaping would corrupt source code in {{content}}.
+Mustache.escape = (value: unknown) => String(value);
 
 export interface RenderOptions {
   ask: ParsedAsk;
@@ -68,13 +71,25 @@ export async function expandInputs(patterns: string[], cwd = process.cwd()): Pro
   return files;
 }
 
+/** Names referenced by {{name}} placeholders in a template, including inside sections. */
 export function placeholders(text: string): string[] {
-  return [...text.matchAll(TOKEN)].map((m) => m[1]);
+  const names: string[] = [];
+  const walk = (tokens: unknown[]): void => {
+    for (const token of tokens as [string, string, number, number, unknown[]?][]) {
+      if (token[0] === "name" || token[0] === "&") names.push(token[1]);
+      else if ((token[0] === "#" || token[0] === "^") && Array.isArray(token[4])) {
+        names.push(token[1]);
+        walk(token[4]);
+      }
+    }
+  };
+  walk(Mustache.parse(text));
+  return names;
 }
 
 /**
  * Render the ask into one prompt per judge call: one per file, or a single batch prompt.
- * Token sources: $file/$filename/$content built from -f, then -t over front-matter args;
+ * Token sources: {{file}}/{{filename}}/{{content}} built from -f, then -t over front-matter args;
  * anything else is prompted for once per run (interactive on a TTY, hard error otherwise).
  */
 export async function renderPrompts(o: RenderOptions): Promise<{ prompt: string; tools: string[] }[]> {
@@ -87,10 +102,10 @@ export async function renderPrompts(o: RenderOptions): Promise<{ prompt: string;
 
   const referenced = new Set([...placeholders(ask.body), ...ask.tools.flatMap(placeholders)]);
   for (const name of referenced) {
-    if (BUILTIN.has(name)) {
-      if (files.length === 0) throw new Error(`ask references $${name} but no -f input was given`);
+    if (name in BUILTIN) {
+      if (files.length === 0) throw new Error(`ask references {{${name}}} but no -f input was given`);
       if (batch && name === "filename")
-        throw new Error("$filename is ambiguous in --batch mode; use $file or $content");
+        throw new Error("{{filename}} is ambiguous in --batch mode; use {{file}} or {{content}}");
       continue; // resolved per prompt below
     }
     if (!(name in ctx)) ctx[name] = o.prompt ? await o.prompt(name) : await promptFor(name, o.isTTY);
@@ -98,7 +113,7 @@ export async function renderPrompts(o: RenderOptions): Promise<{ prompt: string;
 
   const base = o.cwd ?? process.cwd();
   const read = o.readText ?? ((p: string) => (URL_RE.test(p) ? readUrl(p) : readFile(resolve(base, p), "utf8")));
-  // $content drops one trailing newline (like tool stdout) so the ask's own layout controls spacing.
+  // {{content}} drops one trailing newline (like tool stdout) so the ask's own layout controls spacing.
   const readTrimmed = async (p: string) => (await read(p)).replace(/\n$/, "");
   const needsContent = referenced.has("content");
   if (batch) {
@@ -131,7 +146,7 @@ async function renderBody(
   let cursor = 0;
   for (const span of ask.toolSpans) {
     pieces.push(...lines.slice(cursor, span.start));
-    const cmd = substitute(span.code, ctx);
+    const cmd = Mustache.render(span.code, ctx); // names pre-validated against ctx in renderPrompts
     o.onToolStart?.(cmd);
     const stdout = await (o.runTool ?? runTool)(cmd);
     tools.push(cmd);
@@ -139,14 +154,7 @@ async function renderBody(
     cursor = span.end + 1;
   }
   pieces.push(...lines.slice(cursor));
-  return { prompt: substitute(pieces.join("\n"), ctx), tools };
-}
-
-function substitute(text: string, ctx: Record<string, string>): string {
-  return text.replace(TOKEN, (whole, name: string) => {
-    if (!(name in ctx)) throw new Error(`missing token '$${name}'`);
-    return ctx[name];
-  });
+  return { prompt: Mustache.render(pieces.join("\n"), ctx), tools };
 }
 
 async function runTool(cmd: string): Promise<string> {
@@ -162,11 +170,11 @@ async function runTool(cmd: string): Promise<string> {
 async function promptFor(name: string, isTTY: () => boolean = () => process.stdin.isTTY): Promise<string> {
   if (!isTTY())
     throw new Error(
-      `missing token '$${name}': pass -t ${name}=<value>, set it in front matter, or run on a TTY`,
+      `missing token '{{${name}}}': pass -t ${name}=<value>, set it in front matter, or run on a TTY`,
     );
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {
-    return await rl.question(`? $${name} = `);
+    return await rl.question(`? {{${name}}} = `);
   } finally {
     rl.close();
   }

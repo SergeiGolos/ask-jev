@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/vendor/codemirror.css">
   <link rel="stylesheet" href="/style.css">
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="/app.js?v=5"></script>
 </head>
 <body>
   <div class="layout">
@@ -18,6 +18,7 @@
           </div>
           <div class="view-tabs">
             <button type="button" class="view-tab active" id="tabTrends" title="View trend matrix">Trends</button>
+            <button type="button" class="view-tab" id="tabRuns" title="Browse recorded runs">Runs</button>
             <button type="button" class="view-tab" id="tabQuestions" title="Manage and edit questions">Questions</button>
           </div>
         </div>
@@ -25,6 +26,11 @@
         <!-- Trends Search -->
         <div class="sidebar-search" id="trendsSearchWrap">
           <input type="text" id="treeFilter" placeholder="Filter files..." autocomplete="off">
+        </div>
+
+        <!-- Runs Search -->
+        <div class="sidebar-search" id="runsSearchWrap" style="display: none;">
+          <input type="text" id="runsFilter" placeholder="Filter runs..." autocomplete="off">
         </div>
 
         <!-- Questions Search & Actions -->
@@ -39,6 +45,11 @@
       <!-- Trends Tree -->
       <nav class="tree-nav" id="treeContainer">
         <!-- rendered tree -->
+      </nav>
+
+      <!-- Runs List -->
+      <nav class="tree-nav" id="runsContainer" style="display: none;">
+        <!-- rendered run list -->
       </nav>
 
       <!-- Questions Tree / Organizer -->
@@ -132,6 +143,13 @@
             <span class="q-save-status" id="qSaveStatus">Saved</span>
           </div>
 
+          <div class="q-add-group">
+            <span class="q-add-label">+ Category:</span>
+            <button type="button" class="btn-sm btn-category" id="btnAddScore" title="Add a score question (ordinal scale, >=2 levels)">+ Score</button>
+            <button type="button" class="btn-sm btn-category" id="btnAddChoice" title="Add a choice question (categorical rubric)">+ Choice</button>
+            <button type="button" class="btn-sm btn-category" id="btnAddNoul" title="Add a true/false rework flag (noul)">+ True/False</button>
+          </div>
+
           <div class="q-actions">
             <button type="button" class="btn-sm btn-action" id="btnRunQuestion" title="Run this ask">▶ Run</button>
             <button type="button" class="btn-sm btn-action" id="btnMoveQuestion" title="Rename or move">Rename/Move</button>
@@ -169,6 +187,16 @@
         <!-- CodeMirror Editor Container -->
         <div class="editor-container" id="editorContainer"></div>
       </div>
+    </main>
+
+    <!-- Main Content: Runs View -->
+    <main class="main-content" id="runsView" style="display: none;">
+      <div class="empty-state" id="runEmptyState">
+        <div class="empty-icon">🏃</div>
+        <h3>No Run Selected</h3>
+        <p>Select a recorded run from the sidebar to view its report.</p>
+      </div>
+      <iframe class="run-report-frame" id="runReportFrame" style="display: none;" title="Run report"></iframe>
     </main>
   </div>
   <!-- Modal Backdrop & Dialog -->

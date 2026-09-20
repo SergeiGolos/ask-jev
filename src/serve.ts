@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { askDirs, resolveConfig } from "./config.ts";
 import { isRecord } from "./guards.ts";
 import { buildMatrixData, buildTreeData, loadAllManifests, type MatrixQuery } from "./matrix.ts";
-import { historyDir as getHistoryDir, type RunManifest } from "./history.ts";
+import { historyDir as getHistoryDir, readPair, type PairRecord, type RunManifest } from "./history.ts";
+import { renderReportHtml } from "./report.ts";
 import { runAsk, type RunResult } from "./run.ts";
 import { isRunnable, newAskTemplate, parseAsk } from "./askfile.ts";
 
@@ -387,6 +388,41 @@ export function createServer(options: ServerOptions = {}): http.Server {
         sendJson(res, 405, { error: "Method not allowed" });
         return;
       }
+      if (pathname === "/api/runs") {
+        const manifests = await getManifests();
+        sendJson(res, 200, {
+          runs: manifests.map((m) => ({
+            runId: m.runId,
+            timestamp: m.timestamp,
+            ask: m.ask,
+            model: m.model,
+            pairCount: m.pairs.length,
+          })),
+        });
+        return;
+      }
+
+      const reportMatch = pathname.match(/^\/api\/runs\/([A-Za-z0-9_-]+)\/report$/);
+      if (reportMatch) {
+        const runId = reportMatch[1]!;
+        const manifest = (await getManifests()).find((m) => m.runId === runId);
+        if (!manifest) {
+          sendJson(res, 404, { error: `run not found: ${runId}` });
+          return;
+        }
+        const dir = path.join(historyDir, runId);
+        const pairs: { rec: PairRecord; request: string; response: unknown }[] = [];
+        for (const rec of manifest.pairs) pairs.push({ rec, ...(await readPair(dir, rec)) });
+        const html = renderReportHtml(manifest, pairs);
+        res.writeHead(200, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": Buffer.byteLength(html),
+          "Cache-Control": "no-cache",
+        });
+        res.end(html);
+        return;
+      }
+
       if (pathname === "/api/tree") {
         const manifests = await getManifests();
         const tree = await buildTreeData(historyDir, manifests);

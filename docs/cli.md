@@ -67,8 +67,8 @@ ask <question-name> -f <path|glob>... [-t name=value]... [--batch] [--verbose] [
 | Flag / Option | Description |
 |---|---|
 | `<question-name>` | The name of the ask to execute (resolves `<name>.md` from `./.questions` then `~/.questions`). |
-| `-f <path\|glob>` | Target file or glob pattern. Can be passed multiple times (e.g. `-f file1.ts -f file2.ts` or `-f 'src/**/*.ts'`). Required if the ask prompt references `$file`, `$filename`, or `$content`. |
-| `-t name=value` | Overrides or provides a custom token value for `$name`. Can be specified multiple times. Cannot override built-in tokens (`$file`, `$filename`, `$content`). |
+| `-f <path\|glob>` | Target file or glob pattern. Can be passed multiple times (e.g. `-f file1.ts -f file2.ts` or `-f 'src/**/*.ts'`). Required if the ask prompt references `{{file}}`, `{{filename}}`, or `{{content}}`. |
+| `-t name=value` | Overrides or provides a custom token value for `{{name}}`. Can be specified multiple times. Cannot override built-in tokens (`{{file}}`, `{{filename}}`, `{{content}}`). |
 | `--batch` | Runs all matched files through a single judge call instead of sequential per-file calls. |
 | `--verbose` | Emits detailed progress logs and diagnostics during execution. |
 | `--json` | Outputs JSON result payload (`{ runId, pairs: [...] }`) to `stdout` for programmatic scripting. |
@@ -81,7 +81,7 @@ The default per-file table appends a diff against each file's previous run of th
 - Glob patterns are expanded, deduplicated, and sorted within each pattern.
 - Directories are rejected directly (use glob syntax like `dir/**/*`).
 - If no files match the provided `-f` flags, the command fails immediately.
-- In batch mode (`--batch`), `$filename` is forbidden because there is no single target file.
+- In batch mode (`--batch`), `{{filename}}` is forbidden because there is no single target file.
 
 ---
 
@@ -166,7 +166,11 @@ ask serve [path] [--port 3000]
 - Filtering by ask name and timestamp ranges (`from` / `to`).
 - Polls for newly recorded runs every 30 s and refreshes the view when history changed (paused while the tab is hidden).
 - **Run** control (top right): runs the selected ask against the current tree target — file, folder (recursive), or the whole tree — and records it like a CLI run.
+- **Runs** tab: lists recorded run instances grouped by ask file (newest first); selecting a run embeds its full report with the three-level Result / Extended / Verbose inspection.
+- Hash routes with browser back/forward: `#/trends/<path>`, `#/runs/<runId>`, `#/questions/<name>` — every tab switch, tree selection, and cross-reference is a shareable deep link (matrix columns link to runs, ask names link to questions, run groups link back to questions).
 - Direct JSON endpoints:
   - `GET /api/tree?ask=<name>&from=<iso>&to=<iso>`
   - `GET /api/matrix?path=<file-or-dir>&ask=<name>&from=<iso>&to=<iso>`
+  - `GET /api/runs` — chronological run summaries `{runId, timestamp, ask, model, pairCount}`.
+  - `GET /api/runs/<runId>/report` — the run's standalone HTML report.
   - `POST /api/run` — body `{ask, path}`; judges synchronously and returns `{runId, model, pairs}`.

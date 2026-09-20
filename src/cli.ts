@@ -102,8 +102,8 @@ export function parseRunArgs(rest: string[]): RunFlags {
     else fail(`unknown argument '${a}'`);
   }
   for (const k of Object.keys(flags.tokens))
-    if (BUILTIN.has(k))
-      fail(`token '${k}' is built from -f and cannot be overridden with -t`);
+    if (k in BUILTIN)
+      fail(`token '{{${k}}}' is built from -f and cannot be overridden with -t`);
   return flags;
 }
 

@@ -10,7 +10,7 @@ The complete file:
 
 $content
 
----
+```schema
 overall:
   type: score
   instructions: "Overall, how strongly does the file adhere to the SOLID principles? Judge only evidence visible in the file."
@@ -26,3 +26,4 @@ flag:
   criteria:
     true: "Yes — design issues alone warrant a refactor"
     false: "No — the design is acceptable"
+```

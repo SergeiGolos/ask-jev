@@ -10,6 +10,7 @@ export interface AskMeta {
   model?: string;
   args?: Record<string, Scalar>;
   description?: string;
+  schema?: Questions;
 }
 
 export interface FrontMatter {
@@ -55,6 +56,10 @@ export function readAskMeta(data: Record<string, unknown>, source = "ask file"):
     }
     meta.args = args;
   }
+  const rawSchema = data.schema ?? data.questions;
+  if (rawSchema !== undefined) {
+    meta.schema = parseQuestionsFromObject(rawSchema, `${source}: front matter 'schema'`);
+  }
   return meta;
 }
 
@@ -73,18 +78,17 @@ args:
 
 (This whole body is the prompt sent to the judge; edit it freely.)
 
-Review $filename with attention to $focus.
+Review {{filename}} with attention to {{focus}}.
 
 The complete file contents:
 
-$content
+{{content}}
 
 <!-- Optional: add a tool block — a \`\`\`shell fence anywhere above runs before
      judging and its stdout is inlined right there. Built-in tokens are file,
      filename and content; your args work too. -->
 
----
-# Judge questions. Types: score (ordered criteria, >=2 levels), choice (option: rubric), noul (true/false).
+\`\`\`schema
 severity:
   type: score
   instructions: "How severe are the problems visible in the input?"
@@ -98,9 +102,9 @@ flag:
   criteria:
     true: "Yes, rework needed"
     false: "Acceptable as is"
+\`\`\`
 `;
 }
-
 export interface ToolSpan {
   /** 0-based line indexes into `body`, inclusive. */
   start: number;
@@ -134,14 +138,19 @@ export function parseAsk(text: string, file = "ask file"): ParsedAsk {
   const tools: string[] = [];
   const toolSpans: ToolSpan[] = [];
   const separators: number[] = [];
-  let fence: { shell: boolean; start: number } | null = null;
+  let fence: { type: "shell" | "schema" | "other"; start: number } | null = null;
+  let fencedSchemaCode: string | null = null;
+  let fencedSchemaSpan: { start: number; end: number } | null = null;
   for (let i = 0; i < lines.length; i++) {
     if (fence) {
       if (lines[i].trimStart().startsWith("```")) {
-        if (fence.shell) {
+        if (fence.type === "shell") {
           const code = lines.slice(fence.start + 1, i).join("\n");
           tools.push(code);
           toolSpans.push({ start: fence.start, end: i, code });
+        } else if (fence.type === "schema") {
+          fencedSchemaCode = lines.slice(fence.start + 1, i).join("\n");
+          fencedSchemaSpan = { start: fence.start, end: i };
         }
         fence = null;
       }
@@ -149,8 +158,16 @@ export function parseAsk(text: string, file = "ask file"): ParsedAsk {
     }
     const open = /^\s*```(.*)$/.exec(lines[i]);
     if (open) {
-      const info = open[1].trim().split(/\s+/)[0] ?? "";
-      fence = { shell: info.toLowerCase() === "shell", start: i };
+      const parts = open[1].trim().toLowerCase().split(/\s+/);
+      const tag = parts[0] ?? "";
+      const subtag = parts[1] ?? "";
+      if (tag === "shell") {
+        fence = { type: "shell", start: i };
+      } else if (tag === "schema" || (tag === "yaml" && (subtag === "schema" || subtag === "questions"))) {
+        fence = { type: "schema", start: i };
+      } else {
+        fence = { type: "other", start: i };
+      }
     } else if (lines[i].trim() === "---") {
       separators.push(i);
     }
@@ -159,26 +176,41 @@ export function parseAsk(text: string, file = "ask file"): ParsedAsk {
 
   let bodyText = body;
   let schema: Questions | null = null;
-  if (separators.length > 0) {
+
+  // 1. ```schema block in document
+  if (fencedSchemaCode !== null && fencedSchemaSpan !== null) {
+    schema = parseQuestions(fencedSchemaCode, `${file}: \`\`\`schema block`);
+    bodyText = [...lines.slice(0, fencedSchemaSpan.start), ...lines.slice(fencedSchemaSpan.end + 1)].join("\n").trimEnd();
+  } else if (meta.schema) {
+    // 2. Fallback: schema in front matter
+    schema = meta.schema;
+  } else if (separators.length > 0) {
+    // 3. Fallback: legacy section after the last standalone '---'
     const last = separators[separators.length - 1];
     bodyText = lines.slice(0, last).join("\n");
     schema = parseQuestions(lines.slice(last + 1).join("\n"), `${file} schema`);
   }
+
   return { file, meta, body: bodyText, tools, toolSpans, schema };
 }
-
 export async function readAsk(file: string): Promise<ParsedAsk> {
   return parseAsk(await readFile(file, "utf8"), file);
 }
 
-/** Parse + validate a YAML questions schema into the JSON shape the judge expects. */
-export function parseQuestions(text: string, source = "schema"): Questions {
-  const raw: unknown = parseYaml(text);
+/** Parse + validate a YAML questions schema from a raw object into the JSON shape the judge expects. */
+export function parseQuestionsFromObject(raw: unknown, source = "schema"): Questions {
   if (raw === null || raw === undefined) throw new Error(`${source}: schema is empty`);
   if (!isRecord(raw)) throw new Error(`${source}: schema must be a mapping of question id → question`);
   const questions: Questions = {};
   for (const [id, q] of Object.entries(raw)) questions[id] = parseQuestion(id, q, source);
+  if (Object.keys(questions).length === 0) throw new Error(`${source}: schema must contain at least one question`);
   return questions;
+}
+
+/** Parse + validate a YAML questions schema string into the JSON shape the judge expects. */
+export function parseQuestions(text: string, source = "schema"): Questions {
+  const raw: unknown = parseYaml(text);
+  return parseQuestionsFromObject(raw, source);
 }
 
 /** Checks if an ask has a valid non-empty schema to run against a judge. */
@@ -189,6 +221,6 @@ export function isRunnable(ask: ParsedAsk): boolean {
 /** Fails fast if the parsed ask cannot be executed. */
 export function assertRunnable(ask: ParsedAsk, name: string = ask.file): asserts ask is ParsedAsk & { schema: Questions } {
   if (!isRunnable(ask)) {
-    throw new CliError(`ask '${name}' has no questions schema — add one after the final ---`);
+    throw new CliError(`ask '${name}' has no questions schema — add a \`\`\`schema block at the bottom of the document`);
   }
 }

@@ -2,7 +2,6 @@
 import CodeMirror from "./vendor/codemirror.js";
 let treeData = null;
 let currentPath = "";
-let currentIsFolder = true;
 let debounceTimer = null;
 let currentView = "trends";
 let questionsList = [];
@@ -99,20 +98,37 @@ function renderTree() {
   }
 }
 
-function selectNode(path, isFolder) {
-  currentPath = path;
-  currentIsFolder = isFolder;
+function selectNode(path) {
+  navigate("#/trends" + (path ? "/" + path : ""));
+}
 
-  // Update active class in tree
-  document.querySelectorAll(".tree-item, .tree-dir summary").forEach((el) => {
-    el.classList.remove("active");
-  });
+/** Resolve a tree node by path to label it file/directory. */
+function findTreeNode(path, node = treeData?.root) {
+  if (!node || path === "") return node ?? null;
+  for (const child of node.children || []) {
+    if (child.path === path) return child;
+    const hit = findTreeNode(path, child);
+    if (hit && hit.path === path) return hit;
+  }
+  return null;
+}
 
+function updateTargetBadge() {
+  const node = findTreeNode(currentPath);
+  const isFolder = !currentPath || (node ? node.type === "directory" : true);
   $("targetType").textContent = isFolder ? "directory" : "file";
-  $("targetPath").textContent = path === "" ? "/ (All Files)" : path;
-  $("targetPath").title = path === "" ? "All Files" : path;
+  $("targetPath").textContent = currentPath === "" ? "/ (All Files)" : currentPath;
+  $("targetPath").title = currentPath === "" ? "All Files" : currentPath;
+}
 
-  loadMatrix();
+/** Apply a trends target from the route; deep links boot before treeData exists. */
+function setTrendsTarget(path) {
+  currentPath = path;
+  updateTargetBadge();
+  if (treeData) {
+    renderTree();
+    loadMatrix();
+  }
 }
 
 function populateFilters() {
@@ -214,12 +230,11 @@ function renderMatrix(data) {
       <div class="col-run-head">
         <span class="col-run-time">${formatIsoLocal(r.timestamp)}</span>
         <div class="col-run-meta">
-          <span>${r.ask}</span>
+          <span><a href="#/questions/${encodeURIComponent(r.ask)}" title="Open question">${r.ask}</a></span>
           <span>·</span>
           <span>${
-            r.repo && r.sha
-              ? `<a href="${r.repo}/commit/${r.sha}" target="_blank" rel="noopener">${r.runId.slice(0, 8)}</a>`
-              : r.runId.slice(0, 8)
+            `<a href="#/runs/${r.runId}" title="Open run report">${r.runId.slice(0, 8)}</a>` +
+            (r.repo && r.sha ? ` <a href="${r.repo}/commit/${r.sha}" target="_blank" rel="noopener" title="git commit">↗</a>` : "")
           }</span>
         </div>
       </div>
@@ -449,7 +464,7 @@ $("btnRun").addEventListener("click", async () => {
     }
     const out = await res.json();
     await refreshAll(true);
-    status.textContent = `Run ${out.runId.slice(0, 8)} recorded (${out.pairs.length} pair${out.pairs.length === 1 ? "" : "s"})`;
+    status.innerHTML = `Run <a href="#/runs/${out.runId}" title="Open run report">${out.runId.slice(0, 8)}</a> recorded (${out.pairs.length} pair${out.pairs.length === 1 ? "" : "s"})`;
   } catch (err) {
     status.textContent = `Run failed: ${err.message}`;
   } finally {
@@ -464,6 +479,7 @@ async function refreshAll(force = false) {
   treeData = fresh;
   renderTree();
   populateFilters();
+  updateTargetBadge();
   await loadMatrix();
   return true;
 }
@@ -485,6 +501,7 @@ setInterval(async () => {
   if (document.hidden || !treeData) return;
   try {
     await refreshAll();
+    if (currentView === "runs") await loadRuns();
   } catch {}
 }, 30000);
 
@@ -492,28 +509,25 @@ setInterval(async () => {
  * Question Manager & CodeMirror Editor
  * ========================================================================= */
 
+const VIEWS = {
+  trends: { tab: "tabTrends", search: "trendsSearchWrap", nav: "treeContainer", main: "trendsView" },
+  runs: { tab: "tabRuns", search: "runsSearchWrap", nav: "runsContainer", main: "runsView" },
+  questions: { tab: "tabQuestions", search: "questionsSearchWrap", nav: "questionsContainer", main: "questionsView" },
+};
+
 function switchView(view) {
   currentView = view;
-  if (view === "trends") {
-    $("brandSub").textContent = "trends";
-    $("tabTrends").classList.add("active");
-    $("tabQuestions").classList.remove("active");
-    $("trendsSearchWrap").style.display = "";
-    $("treeContainer").style.display = "";
-    $("questionsSearchWrap").style.display = "none";
-    $("questionsContainer").style.display = "none";
-    $("trendsView").style.display = "";
-    $("questionsView").style.display = "none";
-  } else {
-    $("brandSub").textContent = "questions";
-    $("tabQuestions").classList.add("active");
-    $("tabTrends").classList.remove("active");
-    $("trendsSearchWrap").style.display = "none";
-    $("treeContainer").style.display = "none";
-    $("questionsSearchWrap").style.display = "";
-    $("questionsContainer").style.display = "";
-    $("trendsView").style.display = "none";
-    $("questionsView").style.display = "";
+  for (const [name, v] of Object.entries(VIEWS)) {
+    const on = name === view;
+    $(v.tab).classList.toggle("active", on);
+    $(v.search).style.display = on ? "" : "none";
+    $(v.nav).style.display = on ? "" : "none";
+    $(v.main).style.display = on ? "" : "none";
+  }
+  $("brandSub").textContent = view;
+  if (view === "runs") {
+    loadRuns();
+  } else if (view === "questions") {
     loadQuestions();
     if (editorInstance) {
       setTimeout(() => editorInstance.refresh(), 20);
@@ -521,8 +535,136 @@ function switchView(view) {
   }
 }
 
-$("tabTrends").addEventListener("click", () => switchView("trends"));
-$("tabQuestions").addEventListener("click", () => switchView("questions"));
+$("tabTrends").addEventListener("click", () => navigate("#/trends"));
+$("tabRuns").addEventListener("click", () => navigate("#/runs"));
+$("tabQuestions").addEventListener("click", () => navigate("#/questions"));
+
+/* =========================================================================
+ * Hash Router: #/trends[/<path>] · #/runs[/<runId>] · #/questions[/<name>]
+ * ========================================================================= */
+
+function navigate(hash) {
+  if (location.hash === hash) applyRoute();
+  else location.hash = hash; // hashchange → applyRoute
+}
+
+function parseRoute() {
+  const seg = decodeURIComponent(location.hash.replace(/^#\/?/, "")).split("/");
+  const view = VIEWS[seg[0]] ? seg[0] : "trends";
+  return { view, param: seg.slice(1).join("/") };
+}
+
+/** Single source of truth: renders whatever the URL describes. */
+function applyRoute() {
+  const { view, param } = parseRoute();
+  switchView(view);
+  if (view === "trends") {
+    if (param !== currentPath) setTrendsTarget(param);
+  } else if (view === "runs") {
+    if (param && param !== currentRunId) showRun(param);
+  } else if (view === "questions") {
+    if (param && currentQuestion?.name !== param) selectQuestion(param);
+  }
+}
+
+window.addEventListener("hashchange", applyRoute);
+
+/* =========================================================================
+ * Runs Browser
+ * ========================================================================= */
+
+let runsList = [];
+let currentRunId = null;
+
+async function loadRuns() {
+  try {
+    const data = await fetchJson("/api/runs");
+    runsList = data.runs || [];
+    renderRunsTree($("runsFilter").value);
+  } catch (err) {
+    console.error("Failed to load runs:", err);
+  }
+}
+
+/** Run instances grouped by ask file, newest first. */
+function renderRunsTree(filter = "") {
+  const container = $("runsContainer");
+  container.innerHTML = "";
+
+  const filt = filter.trim().toLowerCase();
+  const groups = new Map();
+  for (const r of [...runsList].reverse()) {
+    if (
+      filt &&
+      !(r.ask.toLowerCase().includes(filt) || r.runId.toLowerCase().includes(filt) || r.timestamp.toLowerCase().includes(filt))
+    ) {
+      continue;
+    }
+    if (!groups.has(r.ask)) groups.set(r.ask, []);
+    groups.get(r.ask).push(r);
+  }
+
+  if (groups.size === 0) {
+    const empty = document.createElement("div");
+    empty.className = "tree-empty";
+    empty.style.padding = "12px 8px";
+    empty.style.color = "var(--muted)";
+    empty.style.fontSize = "12px";
+    empty.innerHTML = runsList.length === 0
+      ? `No runs recorded yet. <a href="#/trends">Run an ask from the Trends view</a>.`
+      : "No matching runs.";
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const [ask, list] of groups) {
+    const details = document.createElement("details");
+    details.className = "tree-dir";
+    details.open = true;
+
+    const summary = document.createElement("summary");
+    summary.innerHTML = `
+      <span class="tree-icon">▸</span>
+      <span class="tree-label"><a href="#/questions/${encodeURIComponent(ask)}" title="Open question">${ask}</a></span>
+      <span class="tree-badge">${list.length}</span>
+    `;
+
+    const children = document.createElement("div");
+    children.className = "tree-children";
+    for (const r of list) {
+      const item = document.createElement("div");
+      item.className = `tree-item ${r.runId === currentRunId ? "active" : ""}`;
+      item.dataset.runId = r.runId;
+      item.title = `${r.runId}\nmodel: ${r.model}`;
+      item.innerHTML = `
+        <span class="tree-icon">🏃</span>
+        <span class="tree-label">${formatIsoLocal(r.timestamp)}</span>
+        <span class="tree-badge">${r.pairCount}</span>
+      `;
+      item.onclick = () => navigate("#/runs/" + r.runId);
+      children.appendChild(item);
+    }
+
+    details.appendChild(summary);
+    details.appendChild(children);
+    container.appendChild(details);
+  }
+}
+
+function showRun(runId) {
+  currentRunId = runId;
+  document.querySelectorAll("#runsContainer .tree-item").forEach((el) => {
+    el.classList.toggle("active", el.dataset.runId === runId);
+  });
+  $("runEmptyState").style.display = "none";
+  const frame = $("runReportFrame");
+  frame.style.display = "";
+  frame.src = `/api/runs/${encodeURIComponent(runId)}/report`;
+}
+
+$("runsFilter").addEventListener("input", (e) => {
+  renderRunsTree(e.target.value);
+});
 
 async function loadQuestions() {
   try {
@@ -611,7 +753,7 @@ function renderQuestionsTree(filter = "") {
         <span class="status-dot ${q.isRunnable ? "ok" : "warn"}" title="${q.isRunnable ? "Runnable" : "Missing schema"}"></span>
         <span class="tree-label" title="${q.name} - ${q.description || "No description"}">${shortName}</span>
       `;
-      item.onclick = () => selectQuestion(q.name);
+      item.onclick = () => routeToQuestion(q.name);
       frag.appendChild(item);
     }
     return frag;
@@ -623,17 +765,18 @@ function renderQuestionsTree(filter = "") {
 $("questionsContainer").addEventListener("click", (e) => {
   const item = e.target.closest(".tree-item");
   if (item && item.dataset.name) {
-    selectQuestion(item.dataset.name);
+    routeToQuestion(item.dataset.name);
   }
 });
 
+/** Click-boundary navigation with the unsaved-changes guard; routes bypass it. */
+function routeToQuestion(name) {
+  if (isDirty && currentQuestion && currentQuestion.name !== name && !window.confirm("You have unsaved changes in the current question. Discard them?")) return;
+  navigate("#/questions/" + name);
+}
 
-async function selectQuestion(name, force = false) {
-  if (isDirty && !force) {
-    const ok = window.confirm("You have unsaved changes in the current question. Discard them?");
-    if (!ok) return;
-  }
 
+async function selectQuestion(name) {
   try {
     const data = await fetchJson(`/api/questions?name=${encodeURIComponent(name)}`);
     currentQuestion = data;
@@ -673,15 +816,15 @@ async function selectQuestion(name, force = false) {
         updateVisualHighlights(editorInstance);
         parseAndUpdateSummary(val);
       });
-      editorInstance.getWrapperElement().CodeMirror = editorInstance;
-      window.editorInstance = editorInstance;
     } else {
       editorInstance.setValue(data.content);
       editorInstance.clearHistory();
       setTimeout(() => editorInstance.refresh(), 10);
     }
     window.editorInstance = editorInstance;
-
+    $("editorContainer").editor = editorInstance;
+    $("editorContainer").CodeMirror = editorInstance;
+    editorInstance.getWrapperElement().CodeMirror = editorInstance;
     updateVisualHighlights(editorInstance);
     renderQuestionsTree($("questionsFilter").value);
   } catch (err) {
@@ -720,23 +863,52 @@ function updateVisualHighlights(cm) {
     }
   }
 
-  // Schema lines (after the last standalone '---' outside code fences)
-  let lastSeparator = -1;
-  let inFence = false;
+  // Schema ```schema block lines
+  let inSchemaFence = false;
+  let schemaFenceStart = -1;
+  let hasFencedSchema = false;
+
   for (let i = 0; i < lineCount; i++) {
     const text = cm.getLine(i);
-    if (/^\s*```/.test(text)) {
-      inFence = !inFence;
-    } else if (!inFence && text.trim() === "---" && i > 0) {
-      lastSeparator = i;
+    const m = /^\s*```(.*)$/.exec(text);
+    if (m) {
+      const tag = m[1].trim().toLowerCase().split(/\s+/)[0];
+      if (!inSchemaFence && (tag === "schema" || (tag === "yaml" && m[1].includes("schema")))) {
+        inSchemaFence = true;
+        schemaFenceStart = i;
+        hasFencedSchema = true;
+      } else if (inSchemaFence) {
+        inSchemaFence = false;
+        for (let j = schemaFenceStart; j <= i; j++) {
+          cm.addLineClass(j, "background", "cm-schema-line");
+        }
+        cm.addLineClass(schemaFenceStart, "wrap", "cm-schema-start");
+        cm.addLineClass(i, "wrap", "cm-schema-end");
+        schemaFenceStart = -1;
+      }
+    } else if (inSchemaFence) {
+      cm.addLineClass(i, "background", "cm-schema-line");
     }
   }
 
-  if (lastSeparator > 0 && lastSeparator < lineCount - 1) {
-    for (let i = lastSeparator; i < lineCount; i++) {
-      cm.addLineClass(i, "background", "cm-schema-line");
+  // Fallback: section after the last standalone '---' if no ```schema fence exists
+  if (!hasFencedSchema) {
+    let lastSeparator = -1;
+    let inFence = false;
+    for (let i = 0; i < lineCount; i++) {
+      const text = cm.getLine(i);
+      if (/^\s*```/.test(text)) {
+        inFence = !inFence;
+      } else if (!inFence && text.trim() === "---" && i > 0) {
+        lastSeparator = i;
+      }
     }
-    cm.addLineClass(lastSeparator, "wrap", "cm-schema-start");
+    if (lastSeparator > 0 && lastSeparator < lineCount - 1) {
+      for (let i = lastSeparator; i < lineCount; i++) {
+        cm.addLineClass(i, "background", "cm-schema-line");
+      }
+      cm.addLineClass(lastSeparator, "wrap", "cm-schema-start");
+    }
   }
 }
 
@@ -747,6 +919,8 @@ function parseAndUpdateSummary(text) {
   let model = "";
   const args = [];
   let inArgs = false;
+  let inSchema = false;
+  const schemaQuestions = [];
 
   // Parse frontmatter
   if (lines[0]?.trim() === "---") {
@@ -759,6 +933,12 @@ function parseAndUpdateSummary(text) {
       if (mMod) model = mMod[1].trim();
       if (/^args:\s*$/.test(line)) {
         inArgs = true;
+        inSchema = false;
+        continue;
+      }
+      if (/^(?:schema|questions):\s*$/.test(line)) {
+        inSchema = true;
+        inArgs = false;
         continue;
       }
       if (inArgs) {
@@ -766,32 +946,77 @@ function parseAndUpdateSummary(text) {
         if (mArg) args.push(`${mArg[1]}=${mArg[2].trim()}`);
         else if (/^[^\s]/.test(line)) inArgs = false;
       }
+      if (inSchema) {
+        const qMatch = /^\s{2}([A-Za-z0-9_-]+):\s*$/.exec(line);
+        if (qMatch) {
+          const qId = qMatch[1];
+          let qType = "";
+          for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+            if (/^\s{2}[A-Za-z0-9_-]+:\s*$/.test(lines[j]) || lines[j].trim() === "---") break;
+            const tMatch = /^\s+type:\s*(\w+)/.exec(lines[j]);
+            if (tMatch) {
+              qType = tMatch[1];
+              break;
+            }
+          }
+          schemaQuestions.push(qType ? `${qId} (${qType})` : qId);
+        } else if (/^[^\s]/.test(line)) {
+          inSchema = false;
+        }
+      }
     }
   }
 
-  // Find schema section after last standalone '---'
-  let lastSep = -1;
-  let inFence = false;
+  // 1. Check for ```schema code block (primary)
+  let inSchemaFence = false;
   for (let i = 0; i < lines.length; i++) {
-    if (/^\s*```/.test(lines[i])) inFence = !inFence;
-    else if (!inFence && lines[i].trim() === "---" && i > 0) lastSep = i;
-  }
-
-  const schemaQuestions = [];
-  if (lastSep > 0) {
-    for (let i = lastSep + 1; i < lines.length; i++) {
-      const qMatch = /^([A-Za-z0-9_-]+):\s*$/.exec(lines[i]);
+    const line = lines[i];
+    const fenceMatch = /^\s*```(.*)$/.exec(line);
+    if (fenceMatch) {
+      const tag = fenceMatch[1].trim().toLowerCase().split(/\s+/)[0];
+      if (!inSchemaFence && (tag === "schema" || (tag === "yaml" && fenceMatch[1].includes("schema")))) {
+        inSchemaFence = true;
+      } else {
+        inSchemaFence = false;
+      }
+      continue;
+    }
+    if (inSchemaFence) {
+      const qMatch = /^(?: {0,2})([A-Za-z0-9_-]+):\s*$/.exec(line);
       if (qMatch) {
         const qId = qMatch[1];
+        if (qId === "type" || qId === "instructions" || qId === "criteria") continue;
         let qType = "";
         for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
           const tMatch = /^\s+type:\s*(\w+)/.exec(lines[j]);
-          if (tMatch) {
-            qType = tMatch[1];
-            break;
-          }
+          if (tMatch) { qType = tMatch[1]; break; }
         }
         schemaQuestions.push(qType ? `${qId} (${qType})` : qId);
+      }
+    }
+  }
+
+  // 2. Fallback: section after last standalone '---'
+  if (schemaQuestions.length === 0) {
+    let lastSep = -1;
+    let inFence = false;
+    for (let i = 0; i < lines.length; i++) {
+      if (/^\s*```/.test(lines[i])) inFence = !inFence;
+      else if (!inFence && lines[i].trim() === "---" && i > 0) lastSep = i;
+    }
+    if (lastSep > 0) {
+      for (let i = lastSep + 1; i < lines.length; i++) {
+        const qMatch = /^(?: {0,2})([A-Za-z0-9_-]+):\s*$/.exec(lines[i]);
+        if (qMatch) {
+          const qId = qMatch[1];
+          if (qId === "type" || qId === "instructions" || qId === "criteria") continue;
+          let qType = "";
+          for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+            const tMatch = /^\s+type:\s*(\w+)/.exec(lines[j]);
+            if (tMatch) { qType = tMatch[1]; break; }
+          }
+          schemaQuestions.push(qType ? `${qId} (${qType})` : qId);
+        }
       }
     }
   }
@@ -867,6 +1092,50 @@ function updateSummaryCard(meta = {}, schema = null) {
     $("fmSchemaGroup").style.display = "none";
   }
 }
+
+function addQuestionCategory(type) {
+  if (!editorInstance) return;
+  const cm = editorInstance;
+  const text = cm.getValue();
+  const lines = text.split("\n");
+
+  const templates = {
+    score: `severity:\n  type: score\n  instructions: "Rate the severity or quality of the input"\n  criteria:\n    - "No issues"\n    - "Minor issues"\n    - "Serious issues that need fixing"\n`,
+    choice: `category:\n  type: choice\n  instructions: "Which category best classifies this input?"\n  criteria:\n    defect: "Functional bug or broken behavior"\n    style: "Stylistic or readability issue"\n    performance: "Resource or execution efficiency issue"\n`,
+    noul: `flag:\n  type: noul\n  instructions: "Does this input require immediate rework?"\n  criteria:\n    true: "Immediate rework required"\n    false: "Acceptable as is"\n`,
+  };
+
+  const snippet = templates[type] || templates.score;
+
+  let schemaStart = -1;
+  let schemaEnd = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim().toLowerCase();
+    if (/^```(?:schema|yaml\s+schema)/.test(trimmed)) {
+      schemaStart = i;
+    } else if (schemaStart !== -1 && trimmed === "```") {
+      schemaEnd = i;
+      break;
+    }
+  }
+
+  if (schemaStart !== -1 && schemaEnd !== -1) {
+    const pos = { line: schemaEnd, ch: 0 };
+    cm.replaceRange(snippet, pos);
+    cm.focus();
+    cm.setCursor({ line: schemaEnd + 1, ch: 2 });
+  } else {
+    const appendText = `\n\`\`\`schema\n${snippet}\`\`\`\n`;
+    const lastLine = cm.lineCount();
+    cm.replaceRange(appendText, { line: lastLine, ch: 0 });
+    cm.focus();
+    cm.setCursor({ line: cm.lineCount() - 2, ch: 2 });
+  }
+}
+
+$("btnAddScore").addEventListener("click", () => addQuestionCategory("score"));
+$("btnAddChoice").addEventListener("click", () => addQuestionCategory("choice"));
+$("btnAddNoul").addEventListener("click", () => addQuestionCategory("noul"));
 
 async function saveCurrentQuestion() {
   if (!currentQuestion || !editorInstance) return;
@@ -977,7 +1246,7 @@ function promptNewQuestion() {
       }
       const created = await res.json();
       await loadQuestions();
-      await selectQuestion(created.name, true);
+      navigate("#/questions/" + created.name);
     },
   });
 }
@@ -1004,7 +1273,7 @@ $("btnMoveQuestion").addEventListener("click", () => {
       }
       const moved = await res.json();
       await loadQuestions();
-      await selectQuestion(moved.to.replace(/\.md$/i, ""), true);
+      navigate("#/questions/" + moved.to.replace(/\.md$/i, ""));
     },
   });
 });
@@ -1029,7 +1298,7 @@ $("btnDuplicateQuestion").addEventListener("click", () => {
       }
       const created = await res.json();
       await loadQuestions();
-      await selectQuestion(created.name, true);
+      navigate("#/questions/" + created.name);
     },
   });
 });
@@ -1052,6 +1321,7 @@ $("btnDeleteQuestion").addEventListener("click", async () => {
     $("questionEditorSurface").style.display = "none";
     $("questionEmptyState").style.display = "flex";
     await loadQuestions();
+    navigate("#/questions");
   } catch (err) {
     alert(`Failed to delete question: ${err.message}`);
   }
@@ -1081,11 +1351,7 @@ $("btnRunQuestion").addEventListener("click", async () => {
       throw new Error(err.error || `HTTP ${res.status}`);
     }
     const out = await res.json();
-    const jump = window.confirm(`Run recorded (${out.pairs?.length || 0} pairs judged).\n\nSwitch to Trends to see matrix results?`);
-    if (jump) {
-      switchView("trends");
-      await refreshAll(true);
-    }
+    navigate(`#/runs/${out.runId}`);
   } catch (err) {
     alert(`Run failed: ${err.message}`);
   } finally {
@@ -1097,3 +1363,6 @@ $("btnRunQuestion").addEventListener("click", async () => {
 window.switchView = switchView;
 window.selectQuestion = selectQuestion;
 window.saveCurrentQuestion = saveCurrentQuestion;
+
+// Initialize routing last: resolve the deep link once every declaration exists.
+applyRoute();

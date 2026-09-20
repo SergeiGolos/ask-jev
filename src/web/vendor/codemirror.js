@@ -12198,7 +12198,10 @@ CodeMirror.defineMode("yaml", function() {
 
 CodeMirror.defineMIME("text/x-yaml", "yaml");
 CodeMirror.defineMIME("text/yaml", "yaml");
-
+CodeMirror.defineMIME("text/x-schema", "yaml");
+CodeMirror.defineMode("schema", function(config) {
+  return CodeMirror.getMode(config, "yaml");
+});
 });
 
 ;

@@ -14,9 +14,11 @@
     "node": ">=24"
   },
   "dependencies": {
+    "mustache": "^4.2.0",
     "yaml": "^2.8.0"
   },
   "devDependencies": {
+    "@types/mustache": "^4.2.6",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0"
   },

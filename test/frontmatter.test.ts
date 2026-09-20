@@ -6,10 +6,10 @@ import path from "node:path";
 import { splitFrontMatter, readAskMeta } from "../src/askfile.ts";
 
 test("splitFrontMatter splits a leading block and keeps the body verbatim", () => {
-  const text = "---\nmodel: jev-latest\nargs:\n  focus: security\n---\nReview $filename.\n\n```\n---\n```\n";
+  const text = "---\nmodel: jev-latest\nargs:\n  focus: security\n---\nReview {{filename}}.\n\n```\n---\n```\n";
   const { data, body } = splitFrontMatter(text);
   assert.deepEqual(data, { model: "jev-latest", args: { focus: "security" } });
-  assert.equal(body, "Review $filename.\n\n```\n---\n```\n");
+  assert.equal(body, "Review {{filename}}.\n\n```\n---\n```\n");
 });
 
 test("splitFrontMatter treats a file without front matter as all body", () => {
