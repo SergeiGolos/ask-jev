@@ -65,7 +65,73 @@ export async function resolveAsk(
       // keep looking
     }
   }
+  for (const candidate of [path.resolve(cwd, name), path.resolve(cwd, `${name}.md`)]) {
+    try {
+      if ((await stat(candidate)).isFile()) return { file: candidate, source: "folder" };
+    } catch {
+      // keep looking
+    }
+  }
   return undefined;
+}
+
+/** Expand question names: if a name matches a directory containing .md asks, expands to all questions in it. */
+export async function expandAskNames(
+  names: string[],
+  cwd: string = process.cwd(),
+  home: string = homedir(),
+): Promise<string[]> {
+  const { folder, profile } = askDirs(cwd, home);
+  const out: string[] = [];
+
+  for (const raw of names) {
+    let clean = raw.replace(/[/\\]+$/, "");
+    if (clean.startsWith(".questions/") || clean.startsWith(".questions\\")) {
+      clean = clean.slice(11);
+    }
+
+    const candidates = [
+      { dir: path.join(folder, clean), root: folder },
+      { dir: path.join(profile, clean), root: profile },
+      { dir: path.resolve(cwd, raw), root: cwd },
+    ];
+
+    let foundDir = false;
+    for (const { dir } of candidates) {
+      try {
+        const st = await stat(dir);
+        if (st.isDirectory()) {
+          const files = (await readdir(dir, { recursive: true }))
+            .map((f) => f.split(path.sep).join("/"))
+            .filter((f) => f.toLowerCase().endsWith(".md") && !f.startsWith("history/") && !/(^|\/)\.[^/]+/.test(f));
+
+          if (files.length > 0) {
+            files.sort();
+            for (const f of files) {
+              const full = path.join(dir, f);
+              if (full.startsWith(folder)) {
+                out.push(path.relative(folder, full).replace(/\.md$/i, "").split(path.sep).join("/"));
+              } else if (full.startsWith(profile)) {
+                out.push(path.relative(profile, full).replace(/\.md$/i, "").split(path.sep).join("/"));
+              } else {
+                out.push(path.relative(cwd, full).replace(/\.md$/i, "").split(path.sep).join("/"));
+              }
+            }
+            foundDir = true;
+            break;
+          }
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    if (!foundDir) {
+      out.push(raw);
+    }
+  }
+
+  return out;
 }
 
 export interface AskEntry {

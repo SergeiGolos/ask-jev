@@ -212,3 +212,21 @@ test("POST /api/run with multiple asks and batch flag", async () => {
     assert.deepEqual(calls, ["batch", "batch"]);
   });
 });
+
+test("POST /api/run expands directory to all contained questions", async () => {
+  const cwd = await fixture();
+  await mkdir(path.join(cwd, ".questions", "suite"), { recursive: true });
+  await writeFile(path.join(cwd, ".questions", "suite", "check1.md"), ASK);
+  await writeFile(path.join(cwd, ".questions", "suite", "check2.md"), ASK);
+  await withServer(cwd, async (srv, calls) => {
+    const out = await post(
+      srv.url,
+      JSON.stringify({ ask: "suite", path: "src/a.ts" }),
+    );
+    assert.equal(out.status, 200);
+    const json = out.json as { runs: { ask: string }[] };
+    assert.equal(json.runs.length, 2);
+    assert.deepEqual(json.runs.map((r) => r.ask), ["suite/check1", "suite/check2"]);
+    assert.deepEqual(calls, ["src/a.ts", "src/a.ts"]);
+  });
+});

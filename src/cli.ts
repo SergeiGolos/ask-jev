@@ -2,7 +2,7 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { formatPair, runTable, type RunTablePair } from "./answers.ts";
-import { askDirs, listAsks, resolveConfig } from "./config.ts";
+import { askDirs, expandAskNames, listAsks, resolveConfig } from "./config.ts";
 import { CliError } from "./errors.ts";
 import { cleanRuns, findPreviousRunForFile, findRun, getPreviousAnswersForFile, getRunReportPath, historyDir, listRuns, readPair, type RunManifest } from "./history.ts";
 import { buildTreeData, loadAllManifests } from "./matrix.ts";
@@ -285,10 +285,12 @@ export async function printRunResult(cwd: string, result: RunResult): Promise<vo
 async function cmdRun(argv: string[], cwd: string = process.cwd(), apiKey?: string): Promise<number> {
   const flags = parseRunArgs(argv);
   if (flags.questions.length === 0) fail("needs at least one question name");
+  const questions = await expandAskNames(flags.questions, cwd);
+  if (questions.length === 0) fail("needs at least one question name");
   const key = apiKey ?? process.env.TYPESAFE_API_KEY;
   if (!key) throw new CliError("TYPESAFE_API_KEY is not set — put it in .questions/.env or export it");
   const results: RunResult[] = [];
-  for (const name of flags.questions) {
+  for (const name of questions) {
     const result = await runAsk({
       name,
       cwd,

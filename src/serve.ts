@@ -2,7 +2,7 @@ import http from "node:http";
 import { glob, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { askDirs, resolveConfig } from "./config.ts";
+import { askDirs, expandAskNames, resolveConfig } from "./config.ts";
 import { isRecord } from "./guards.ts";
 import { buildMatrixData, buildTreeData, loadAllManifests, type MatrixQuery } from "./matrix.ts";
 import { historyDir as getHistoryDir, readPair, type PairRecord, type RunManifest } from "./history.ts";
@@ -499,6 +499,11 @@ export function createServer(options: ServerOptions = {}): http.Server {
           sendJson(res, 400, { error: "body must specify ask, asks, or questions" });
           return;
         }
+        const expandedAsks = await expandAskNames(asks, cwd);
+        if (expandedAsks.length === 0) {
+          sendJson(res, 400, { error: "no questions matched" });
+          return;
+        }
 
         let files: string[];
         if (Array.isArray(body.files)) {
@@ -532,7 +537,7 @@ export function createServer(options: ServerOptions = {}): http.Server {
         }
         const batch = body.batch === true;
         const results: RunResult[] = [];
-        for (const askName of asks) {
+        for (const askName of expandedAsks) {
           const result = await runAsk({
             name: askName,
             cwd,

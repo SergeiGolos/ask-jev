@@ -26,6 +26,9 @@ async function setupFixture(): Promise<string> {
   await writeFile(path.join(cwd, ".questions", "q1.md"), ASK_TEMPLATE);
   await writeFile(path.join(cwd, ".questions", "q2.md"), ASK_TEMPLATE);
   await writeFile(path.join(cwd, ".questions", ".env"), "TYPESAFE_API_KEY=test-key\n");
+  await mkdir(path.join(cwd, ".questions", "audit"), { recursive: true });
+  await writeFile(path.join(cwd, ".questions", "audit", "rule1.md"), ASK_TEMPLATE);
+  await writeFile(path.join(cwd, ".questions", "audit", "rule2.md"), ASK_TEMPLATE);
   await mkdir(path.join(cwd, "src"), { recursive: true });
   await writeFile(path.join(cwd, "src", "a.ts"), "const a = 1;\n");
   return cwd;
@@ -83,5 +86,31 @@ test("cli main fails with error when no question is provided", async () => {
     );
   } finally {
     process.chdir(origCwd);
+  }
+});
+
+test("cli main expands directory to all questions contained in it", async () => {
+  const cwd = await setupFixture();
+  const origCwd = process.cwd();
+  const origFetch = globalThis.fetch;
+
+  globalThis.fetch = (async () => {
+    return Response.json({ model: "jev-1", answers: { severity: { score: 1 } } });
+  }) as typeof fetch;
+
+  try {
+    process.chdir(cwd);
+
+    // Passing directory name 'audit' expands to audit/rule1 and audit/rule2
+    const code = await main(["audit", "-f", "src/a.ts"]);
+    assert.equal(code, 0);
+
+    const runs = await listRuns(cwd);
+    assert.equal(runs.length, 2);
+    const asks = runs.map((r) => r.ask).sort();
+    assert.deepEqual(asks, ["audit/rule1", "audit/rule2"]);
+  } finally {
+    process.chdir(origCwd);
+    globalThis.fetch = origFetch;
   }
 });
