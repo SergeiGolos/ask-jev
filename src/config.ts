@@ -1,7 +1,37 @@
 import { homedir } from "node:os";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { readAskMeta, splitFrontMatter } from "./frontmatter.ts";
+import { readAskMeta, splitFrontMatter } from "./askfile.ts";
+import { layeredEnv } from "./env.ts";
+
+export interface AppConfig {
+  cwd: string;
+  folder: string;
+  profile: string;
+  apiKey?: string;
+  env: Record<string, string>;
+}
+
+/** Resolve project and profile configuration without mutating global process state. */
+export async function resolveConfig(
+  cwd: string = process.cwd(),
+  home: string = homedir(),
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): Promise<AppConfig> {
+  const { folder, profile } = askDirs(cwd, home);
+  const layered = await layeredEnv([path.join(profile, ".env"), path.join(folder, ".env")]);
+  const combined: Record<string, string> = { ...layered };
+  for (const [k, v] of Object.entries(baseEnv)) {
+    if (v !== undefined) combined[k] = v;
+  }
+  return {
+    cwd,
+    folder,
+    profile,
+    apiKey: combined.TYPESAFE_API_KEY,
+    env: combined,
+  };
+}
 
 export type AskSource = "folder" | "profile";
 
@@ -21,6 +51,8 @@ export async function resolveAsk(
   cwd: string = process.cwd(),
   home: string = homedir(),
 ): Promise<ResolvedAsk | undefined> {
+  if (!name || typeof name !== "string")
+    throw new TypeError(`resolveAsk: ask name must be a non-empty string, got '${name}'`);
   const { folder, profile } = askDirs(cwd, home);
   for (const [dir, source] of [
     [folder, "folder"],

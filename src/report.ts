@@ -2,20 +2,13 @@ import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { isRecord } from "./guards.ts";
 import { findRun, latestRun, readPair, type PairRecord, type RunManifest } from "./history.ts";
+import { parseAnswer, toneOf, gradeOf, type ParsedAnswer as Answer, type Tone } from "./answers.ts";
 
 const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 // ── Scoring Model ────────────────────────────────────────────────────────────
 
-interface Answer {
-  q: string;
-  v: number | null;
-  label: string;
-  tone: "ok" | "warn" | "bad" | "mut";
-  conf: number | null;
-  probs: [number, number][] | null;
-}
 
 interface FileScore {
   rec: PairRecord;
@@ -24,65 +17,12 @@ interface FileScore {
   answers: Answer[];
   total: number | null;
   grade: string;
-  tone: "ok" | "warn" | "bad" | "mut";
+  tone: Tone;
   rank: number;
 }
 
 const fmt = (v: number): string => (Number.isInteger(v) ? String(v) : v.toFixed(1));
 
-const toneOf = (v: number): "ok" | "warn" | "bad" => (v >= 7 ? "ok" : v >= 4 ? "warn" : "bad");
-
-function gradeOf(avg: number | null): string {
-  if (avg === null) return "—";
-  if (avg >= 9) return "S";
-  if (avg >= 8) return "A";
-  if (avg >= 6.5) return "B";
-  if (avg >= 5) return "C";
-  if (avg >= 3.5) return "D";
-  return "F";
-}
-
-function parseAnswer(q: string, a: unknown): Answer {
-  const ans: Answer = { q, v: null, label: "?", tone: "mut", conf: null, probs: null };
-  if (!isRecord(a)) return ans;
-
-  if (typeof a.confidence === "number") ans.conf = Math.round(a.confidence * 100);
-
-  if (isRecord(a.probabilities)) {
-    const ps = Object.entries(a.probabilities)
-      .filter(([k, p]) => /^-?\d+$/.test(k) && typeof p === "number")
-      .sort((x, y) => Number(x[0]) - Number(y[0]));
-    if (ps.length > 1) ans.probs = ps.map(([k, p]) => [Number(k), p as number]);
-  }
-
-  let v: number | null = null;
-  if (typeof a.score === "number") v = a.score;
-  else if (typeof a.choice === "string" || typeof a.choice === "number") {
-    const n = Number(a.choice);
-    if (!Number.isNaN(n)) v = n;
-  }
-
-  if (v !== null) {
-    ans.v = v;
-    ans.label = fmt(v);
-    ans.tone = toneOf(v);
-    return ans;
-  }
-
-  if (typeof a.noul === "number" || typeof a.noul === "boolean") {
-    const p = typeof a.noul === "boolean" ? (a.noul ? 1 : 0) : a.noul;
-    const isBad = p >= 0.5;
-    ans.label = isBad ? `rework ${Math.round(p * 100)}%` : `pass ${Math.round((1 - p) * 100)}%`;
-    ans.tone = isBad ? "bad" : "ok";
-    return ans;
-  }
-
-  if (a.choice !== undefined) {
-    ans.label = String(a.choice);
-    ans.tone = "mut";
-  }
-  return ans;
-}
 
 function scoreFiles(pairs: { rec: PairRecord; request: string; response: unknown }[]): FileScore[] {
   const scored = pairs.map((p) => {

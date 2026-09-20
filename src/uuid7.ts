@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 
 /** RFC 9562 UUIDv7: 48-bit unix-ms timestamp + random bits; sorts lexically = chronologically. */
 export function uuidv7(now = Date.now()): string {
+  if (typeof now !== "number" || Number.isNaN(now) || now < 0)
+    throw new TypeError(`uuidv7: timestamp must be a non-negative number, got ${now}`);
   const b = randomBytes(16);
   const ts = BigInt(now);
   for (let i = 0; i < 6; i++) b[i] = Number((ts >> BigInt(8 * (5 - i))) & 0xffn);

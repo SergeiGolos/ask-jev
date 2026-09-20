@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { resolveAsk, listAsks } from "../src/config.ts";
+import { resolveAsk, listAsks, resolveConfig } from "../src/config.ts";
 
 /** Fixture layout: fake HOME with a profile .questions, fake project dir with a folder .questions. */
 async function makeFixture() {
@@ -60,4 +60,14 @@ test("list keeps going on a corrupt ask", async () => {
   await writeFile(path.join(cwd, ".questions", "broken.md"), "---\nmodel: 7\n---\n");
   const asks = await listAsks(cwd, home);
   assert.equal(asks.find((a) => a.name === "broken")?.model, "(invalid)");
+});
+
+test("resolveConfig layers profile and folder env without mutating process.env", async () => {
+  const { home, cwd } = await makeFixture();
+  await writeFile(path.join(home, ".questions", ".env"), "TYPESAFE_API_KEY=profile-key\nPROFILE_VAR=1\n");
+  await writeFile(path.join(cwd, ".questions", ".env"), "TYPESAFE_API_KEY=folder-key\nFOLDER_VAR=2\n");
+  const cfg = await resolveConfig(cwd, home, {});
+  assert.equal(cfg.apiKey, "folder-key");
+  assert.equal(cfg.env.PROFILE_VAR, "1");
+  assert.equal(cfg.env.FOLDER_VAR, "2");
 });

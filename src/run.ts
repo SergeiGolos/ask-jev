@@ -1,7 +1,9 @@
-import { readAsk } from "./askfile.ts";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { assertRunnable, readAsk } from "./askfile.ts";
 import { askDirs, resolveAsk } from "./config.ts";
 import { CliError } from "./errors.ts";
-import { recordRun, type PairRecord, type RunManifest } from "./history.ts";
+import { recordRun, type GitStamp, type PairRecord, type RunManifest } from "./history.ts";
 import { judge, type JudgeResult } from "./judge.ts";
 import { expandInputs, renderPrompts } from "./render.ts";
 
@@ -12,6 +14,15 @@ const LANG: Record<string, string> = {
 };
 
 export const langOf = (p: string): string => LANG[p.split(".").pop()!.toLowerCase()] ?? "Unknown";
+
+/** Best-effort git stamp of the analyzed tree: HEAD sha + origin remote; undefined outside a repo. */
+export async function gitStamp(cwd: string): Promise<GitStamp | undefined> {
+  const git = (args: string[]) => promisify(execFile)("git", args, { cwd }).then((r) => r.stdout.trim()).catch(() => undefined);
+  const sha = await git(["rev-parse", "HEAD"]);
+  if (!sha) return undefined;
+  const remote = await git(["remote", "get-url", "origin"]);
+  return { sha, ...(remote ? { remote } : {}) };
+}
 
 /** The state field for one judge call: the rendered prompt is the entire state (map ticket 01). */
 export function judgeState(file: string, prompt: string, single: boolean): Record<string, unknown> {
@@ -56,8 +67,7 @@ export async function runAsk(o: RunOptions): Promise<RunResult> {
     throw new Error(`no ask '${o.name}' in ${folder} or ${profile}`);
   }
   const ask = await readAsk(found.file);
-  if (!ask.schema || Object.keys(ask.schema).length === 0)
-    throw new CliError(`ask '${o.name}' has no questions schema — add one after the final ---`);
+  assertRunnable(ask, o.name);
   const files = await expandInputs(o.files, cwd);
   const batch = o.batch ?? false;
   const rendered = await renderPrompts({
@@ -100,6 +110,7 @@ export async function runAsk(o: RunOptions): Promise<RunResult> {
     argv: o.argv,
     pairs,
     schema: ask.schema,
+    git: await gitStamp(cwd),
   });
   return { manifest, model, pairs };
 }

@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 import { isRecord } from "./guards.ts";
@@ -30,6 +30,15 @@ export interface RunManifest {
   files: string[];
   argv: string[];
   pairs: PairRecord[];
+  /** Git commit the analyzed code was at when the run executed; absent outside a repo. */
+  git?: GitStamp;
+}
+
+export interface GitStamp {
+  /** Full HEAD sha. */
+  sha: string;
+  /** `origin` remote URL, when defined. */
+  remote?: string;
 }
 
 export interface PairInput {
@@ -48,6 +57,7 @@ export interface RunInput {
   argv: string[];
   pairs: PairInput[];
   schema: Questions | null;
+  git?: GitStamp;
   /** Test seams. */
   now?: number;
   runId?: string;
@@ -55,6 +65,10 @@ export interface RunInput {
 
 // ponytail: default history directory; upgrade path is configurable history storage
 export const historyDir = (cwd: string): string => path.join(cwd, ".questions", "history");
+
+/** Path to report.html for a given run ID. */
+export const getRunReportPath = (cwd: string, runId: string): string =>
+  path.join(historyDir(cwd), runId, "report.html");
 
 function slug(file: string): string {
   const s = file.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -90,6 +104,7 @@ export async function recordRun(cwd: string, input: RunInput): Promise<RunManife
     files: input.files,
     argv: input.argv,
     pairs,
+    git: input.git,
   };
   await writeFile(path.join(dir, "run.json"), JSON.stringify(manifest, null, 2) + "\n");
   return manifest;
@@ -99,11 +114,28 @@ async function readManifest(dir: string): Promise<RunManifest | undefined> {
   let raw: unknown;
   try {
     raw = JSON.parse(await readFile(path.join(dir, "run.json"), "utf8"));
-  } catch {
+  } catch (err: unknown) {
+    const exists = await stat(path.join(dir, "run.json")).then(() => true).catch(() => false);
+    if (exists) console.error(`[history] corrupt run.json in ${dir}: ${(err as Error).message}`);
     return undefined;
   }
-  if (!isRecord(raw)) return undefined;
-  return raw as unknown as RunManifest; // shape guaranteed by recordRun; manifest is our own artifact
+  if (!isRecord(raw) || typeof raw.runId !== "string" || !Array.isArray(raw.pairs)) {
+    return undefined;
+  }
+  return raw as unknown as RunManifest;
+}
+
+/** All manifests in chronological order. Accepts either project cwd or history directory. */
+export async function loadAllManifests(dirOrCwd: string): Promise<RunManifest[]> {
+  const root = dirOrCwd.endsWith("history") ? dirOrCwd : historyDir(dirOrCwd);
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  const manifests: RunManifest[] = [];
+  for (const ent of entries) {
+    if (!ent.isDirectory()) continue;
+    const m = await readManifest(path.join(root, ent.name));
+    if (m) manifests.push(m);
+  }
+  return manifests.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 }
 
 export interface RunSummary {
@@ -163,4 +195,9 @@ export async function readPair(dir: string, pair: PairRecord): Promise<{ request
     request: await readFile(path.join(dir, pair.request), "utf8"),
     response: JSON.parse(await readFile(path.join(dir, pair.response), "utf8")),
   };
+}
+
+/** Read and parse a pair response JSON file from a run directory. */
+export async function readPairResponse(dir: string, responseFile: string): Promise<unknown> {
+  return JSON.parse(await readFile(path.join(dir, responseFile), "utf8"));
 }

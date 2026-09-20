@@ -1,9 +1,17 @@
-import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { isRecord } from "./guards.ts";
-import type { RunManifest, PairRecord } from "./history.ts";
+import { loadAllManifests, readPairResponse, type RunManifest, type PairRecord } from "./history.ts";
+import { parseAnswer, type ParsedAnswer, type Tone } from "./answers.ts";
+export { loadAllManifests, parseAnswer, type ParsedAnswer, type Tone };
 
 const URL_RE = /^https?:\/\//;
+
+// ponytail: GitHub-only compare/commit links; extend for other forges when a run records such a remote
+export function githubRepoUrl(remote?: string): string | undefined {
+  if (!remote) return undefined;
+  const m = remote.match(/github\.com[:/](.+?)(?:\.git)?\/?$/);
+  return m ? `https://github.com/${m[1]}` : undefined;
+}
 
 export interface TreeNode {
   name: string;
@@ -21,12 +29,6 @@ export interface TreeData {
   timeRange: { min: string; max: string };
 }
 
-export interface ParsedAnswer {
-  q: string;
-  numeric: number | null;
-  display: string;
-  tone: "ok" | "warn" | "bad" | "mut";
-}
 
 export interface MatrixCell {
   runId: string;
@@ -53,6 +55,10 @@ export interface MatrixRunCol {
   timestamp: string;
   ask: string;
   model: string;
+  /** Git stamp of the analyzed tree, when the run recorded one. */
+  sha?: string;
+  /** GitHub repo base URL derived from the origin remote; undefined for non-GitHub remotes. */
+  repo?: string;
 }
 
 export interface MatrixResponse {
@@ -71,57 +77,13 @@ export interface MatrixQuery {
   questions?: string[];
 }
 
-export function parseAnswer(q: string, a: unknown): ParsedAnswer {
-  const ans: ParsedAnswer = { q, numeric: null, display: "—", tone: "mut" };
-  if (!isRecord(a)) return ans;
 
-  let v: number | null = null;
-  if (typeof a.score === "number") v = a.score;
-  else if (typeof a.choice === "string" || typeof a.choice === "number") {
-    const n = Number(a.choice);
-    if (!Number.isNaN(n)) v = n;
-  }
-
-  if (v !== null) {
-    ans.numeric = v;
-    ans.display = Number.isInteger(v) ? String(v) : v.toFixed(1);
-    ans.tone = v >= 7 ? "ok" : v >= 4 ? "warn" : "bad";
-    return ans;
-  }
-
-  if (typeof a.noul === "number" || typeof a.noul === "boolean") {
-    const p = typeof a.noul === "boolean" ? (a.noul ? 1 : 0) : a.noul;
-    const isBad = p >= 0.5;
-    ans.numeric = p;
-    ans.display = isBad ? `rework ${Math.round(p * 100)}%` : `pass ${Math.round((1 - p) * 100)}%`;
-    ans.tone = isBad ? "bad" : "ok";
-    return ans;
-  }
-
-  if (a.choice !== undefined) {
-    ans.display = String(a.choice);
-    ans.tone = "mut";
-  }
-
-  return ans;
-}
-
-export async function loadAllManifests(historyDir: string): Promise<RunManifest[]> {
-  const entries = await readdir(historyDir, { withFileTypes: true }).catch(() => []);
-  const manifests: RunManifest[] = [];
-  for (const ent of entries) {
-    if (!ent.isDirectory()) continue;
-    try {
-      const raw = await readFile(path.join(historyDir, ent.name, "run.json"), "utf8");
-      manifests.push(JSON.parse(raw));
-    } catch {
-      // skip partial or corrupted run
-    }
-  }
-  return manifests.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-}
 
 export async function buildTreeData(historyDir: string, manifests: RunManifest[]): Promise<TreeData> {
+  if (typeof historyDir !== "string" || !historyDir)
+    throw new TypeError("buildTreeData: historyDir must be a non-empty string");
+  if (!Array.isArray(manifests))
+    throw new TypeError("buildTreeData: manifests must be an array");
   const askSet = new Set<string>();
   const questionSet = new Set<string>();
   const fileRunCounts = new Map<string, { count: number; asks: Set<string> }>();
@@ -147,9 +109,7 @@ export async function buildTreeData(historyDir: string, manifests: RunManifest[]
 
     if (m.pairs.length > 0) {
       try {
-        const respPath = path.join(historyDir, m.runId, m.pairs[0]!.response);
-        const raw = await readFile(respPath, "utf8");
-        const resp = JSON.parse(raw);
+        const resp = await readPairResponse(path.join(historyDir, m.runId), m.pairs[0]!.response);
         if (isRecord(resp) && isRecord(resp.answers)) {
           for (const qid of Object.keys(resp.answers)) {
             questionSet.add(qid);
@@ -244,6 +204,12 @@ export async function buildMatrixData(
   manifests: RunManifest[],
   query: MatrixQuery
 ): Promise<MatrixResponse> {
+  if (typeof historyDir !== "string" || !historyDir)
+    throw new TypeError("buildMatrixData: historyDir must be a non-empty string");
+  if (!Array.isArray(manifests))
+    throw new TypeError("buildMatrixData: manifests must be an array");
+  if (!query || typeof query !== "object")
+    throw new TypeError("buildMatrixData: query object is required");
   const targetPath = query.path ? path.normalize(query.path) : "";
   let grepRegex: RegExp | null = null;
   if (query.grep) {
@@ -290,15 +256,16 @@ export async function buildMatrixData(
       timestamp: m.timestamp,
       ask: m.ask,
       model: m.model,
+      sha: m.git?.sha,
+      repo: githubRepoUrl(m.git?.remote),
     });
 
     const qAnswersMap = new Map<string, ParsedAnswer[]>();
 
     for (const p of matchingPairs) {
-      const respPath = path.join(historyDir, m.runId, p.response);
       let respObj: unknown;
       try {
-        respObj = JSON.parse(await readFile(respPath, "utf8"));
+        respObj = await readPairResponse(path.join(historyDir, m.runId), p.response);
       } catch {
         continue;
       }

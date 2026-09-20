@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { splitFrontMatter, readAskMeta } from "../src/frontmatter.ts";
+import { splitFrontMatter, readAskMeta } from "../src/askfile.ts";
 
 test("splitFrontMatter splits a leading block and keeps the body verbatim", () => {
   const text = "---\nmodel: jev-latest\nargs:\n  focus: security\n---\nReview $filename.\n\n```\n---\n```\n";

@@ -1,8 +1,105 @@
 import { readFile } from "node:fs/promises";
 import { parse as parseYaml } from "yaml";
 import { isRecord } from "./guards.ts";
-import { readAskMeta, splitFrontMatter, type AskMeta } from "./frontmatter.ts";
+import { CliError } from "./errors.ts";
 import { parseQuestion, type Questions } from "./answers.ts";
+
+export type Scalar = string | number | boolean;
+
+export interface AskMeta {
+  model?: string;
+  args?: Record<string, Scalar>;
+  description?: string;
+}
+
+export interface FrontMatter {
+  data: Record<string, unknown>;
+  body: string;
+}
+
+/** Split a leading `---` … `---` YAML front-matter block from the rest of the file. */
+export function splitFrontMatter(text: string): FrontMatter {
+  const stripped = text.replace(/^\uFEFF/, "");
+  const lines = stripped.split("\n");
+  if (lines[0]?.trim() !== "---") return { data: {}, body: stripped };
+  const close = lines.findIndex((line, i) => i > 0 && line.trim() === "---");
+  if (close === -1)
+    throw new Error("unterminated front matter: opening --- with no closing ---");
+  const data = parseYaml(lines.slice(1, close).join("\n"));
+  if (data !== null && data !== undefined && !isRecord(data))
+    throw new Error("front matter must be a YAML mapping");
+  return { data: data ?? {}, body: lines.slice(close + 1).join("\n") };
+}
+
+/** Validate the front-matter keys ask-jev understands; unknown keys pass through untouched. */
+export function readAskMeta(data: Record<string, unknown>, source = "ask file"): AskMeta {
+  const meta: AskMeta = {};
+  if (data.model !== undefined) {
+    if (typeof data.model !== "string")
+      throw new Error(`${source}: front matter 'model' must be a string`);
+    meta.model = data.model;
+  }
+  if (data.description !== undefined) {
+    if (typeof data.description !== "string")
+      throw new Error(`${source}: front matter 'description' must be a string`);
+    meta.description = data.description;
+  }
+  if (data.args !== undefined) {
+    if (!isRecord(data.args))
+      throw new Error(`${source}: front matter 'args' must be a mapping`);
+    const args: Record<string, Scalar> = {};
+    for (const [k, v] of Object.entries(data.args)) {
+      if (typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean")
+        throw new Error(`${source}: front matter 'args.${k}' must be a scalar`);
+      args[k] = v;
+    }
+    meta.args = args;
+  }
+  return meta;
+}
+
+/** Scaffold for `ask-jev new` — valid per the locked ask anatomy, renders without prompting. */
+export function newAskTemplate(name: string): string {
+  return `---
+# One line naming the question this ask answers; ask-jev list shows it. Update it if you repurpose the ask.
+description: "Review one file for general code quality"
+# Judge model. Args are token defaults; -t name=value overrides them at run time.
+model: jev-latest
+args:
+  focus: "general quality"
+---
+
+# Review request — ask '${name}'
+
+(This whole body is the prompt sent to the judge; edit it freely.)
+
+Review $filename with attention to $focus.
+
+The complete file contents:
+
+$content
+
+<!-- Optional: add a tool block — a \`\`\`shell fence anywhere above runs before
+     judging and its stdout is inlined right there. Built-in tokens are file,
+     filename and content; your args work too. -->
+
+---
+# Judge questions. Types: score (ordered criteria, >=2 levels), choice (option: rubric), noul (true/false).
+severity:
+  type: score
+  instructions: "How severe are the problems visible in the input?"
+  criteria:
+    - "No real problems"
+    - "Minor problems worth noting"
+    - "Serious problems that need fixing"
+flag:
+  type: noul
+  instructions: "Should this input be reworked?"
+  criteria:
+    true: "Yes, rework needed"
+    false: "Acceptable as is"
+`;
+}
 
 export interface ToolSpan {
   /** 0-based line indexes into `body`, inclusive. */
@@ -82,4 +179,16 @@ export function parseQuestions(text: string, source = "schema"): Questions {
   const questions: Questions = {};
   for (const [id, q] of Object.entries(raw)) questions[id] = parseQuestion(id, q, source);
   return questions;
+}
+
+/** Checks if an ask has a valid non-empty schema to run against a judge. */
+export function isRunnable(ask: ParsedAsk): boolean {
+  return ask.schema !== null && Object.keys(ask.schema).length > 0;
+}
+
+/** Fails fast if the parsed ask cannot be executed. */
+export function assertRunnable(ask: ParsedAsk, name: string = ask.file): asserts ask is ParsedAsk & { schema: Questions } {
+  if (!isRunnable(ask)) {
+    throw new CliError(`ask '${name}' has no questions schema — add one after the final ---`);
+  }
 }

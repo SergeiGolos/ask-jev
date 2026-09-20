@@ -194,7 +194,11 @@ function renderMatrix(data) {
         <div class="col-run-meta">
           <span>${r.ask}</span>
           <span>·</span>
-          <span>${r.runId.slice(0, 8)}</span>
+          <span>${
+            r.repo && r.sha
+              ? `<a href="${r.repo}/commit/${r.sha}" target="_blank" rel="noopener">${r.runId.slice(0, 8)}</a>`
+              : r.runId.slice(0, 8)
+          }</span>
         </div>
       </div>
     `;
@@ -215,7 +219,8 @@ function renderMatrix(data) {
     qTh.title = q.id;
     row.appendChild(qTh);
 
-    for (const r of data.runs) {
+    for (let i = 0; i < data.runs.length; i++) {
+      const r = data.runs[i];
       const td = document.createElement("td");
       const cell = q.cells[r.runId];
 
@@ -233,10 +238,16 @@ function renderMatrix(data) {
           deltaHtml = `<span class="delta-badge changed">changed</span>`;
         }
 
+        const prevRun = i > 0 ? data.runs[i - 1] : null;
+        const diffUrl = cell.changed && prevRun?.sha && r.sha && r.repo
+          ? `${r.repo}/compare/${prevRun.sha}...${r.sha}`
+          : null;
+
         td.innerHTML = `
           <div class="cell-content">
             <span class="cell-val ${cell.tone}">${cell.display}</span>
             ${deltaHtml}
+            ${diffUrl ? `<a class="diff-link" href="${diffUrl}" target="_blank" rel="noopener" title="git diff ${prevRun.sha.slice(0, 8)}…${r.sha.slice(0, 8)}">↗</a>` : ""}
           </div>
         `;
 

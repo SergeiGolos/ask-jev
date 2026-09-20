@@ -8,7 +8,7 @@ import { renderPrompts } from "../src/render.ts";
 import { cmdNew } from "../src/cli.ts";
 import { resolveAsk } from "../src/config.ts";
 import { runAsk } from "../src/run.ts";
-import { newAskTemplate } from "../src/template.ts";
+import { newAskTemplate } from "../src/askfile.ts";
 
 test("the scaffold template parses into a valid ask", () => {
   const ask = parseAsk(newAskTemplate("review"), "review.md");

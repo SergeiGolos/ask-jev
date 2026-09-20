@@ -173,8 +173,7 @@ Detailed references are available in the [`docs/`](docs/) directory:
 src/
 ├── cli.ts          # CLI entry point, routing, and terminal presentation
 ├── run.ts          # Pipeline coordination: discovery, rendering, judging, recording
-├── askfile.ts      # Markdown parser for frontmatter, body, fences, and schema
-├── template.ts     # Scaffolding template for `ask-jev new`
+├── askfile.ts      # Markdown parser, metadata inspection, and scaffolding template
 ├── render.ts       # Token substitution, batch layout, and shell tool execution
 ├── judge.ts        # TypeSafe API client (POST /v1/judge)
 ├── answers.ts      # Typed question schemas (score/choice/noul) & result formatting

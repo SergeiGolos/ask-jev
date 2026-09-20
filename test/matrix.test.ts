@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { buildTreeData, buildMatrixData, loadAllManifests, parseAnswer } from "../src/matrix.ts";
+import { buildTreeData, buildMatrixData, githubRepoUrl, loadAllManifests, parseAnswer } from "../src/matrix.ts";
 
 test("parseAnswer parses score, choice, and noul", () => {
   const score = parseAnswer("q1", { score: 8.5 });
@@ -97,4 +97,33 @@ test("URL inputs group under a host directory and stack by verbatim URL", async 
   const hostMatrix = await buildMatrixData(historyDir, manifests, { path: "https://example.com" });
   assert.equal(hostMatrix.isFolder, true);
   assert.equal(hostMatrix.runs.length, 4); // host path rolls up all its URLs
+});
+
+test("githubRepoUrl and run-column git stamp passthrough", async () => {
+  assert.equal(githubRepoUrl("git@github.com:owner/repo.git"), "https://github.com/owner/repo");
+  assert.equal(githubRepoUrl("https://github.com/owner/repo.git"), "https://github.com/owner/repo");
+  assert.equal(githubRepoUrl("https://gitlab.com/owner/repo.git"), undefined);
+  assert.equal(githubRepoUrl(undefined), undefined);
+
+  const historyDir = await mkdtemp(path.join(tmpdir(), "aj-gitstamp-"));
+  const manifest = (runId: string, git?: { sha: string; remote: string }) => ({
+    runId,
+    timestamp: runId === "b" ? "2025-01-02T00:00:00.000Z" : "2025-01-01T00:00:00.000Z",
+    ask: "a",
+    askSource: "folder",
+    model: "m",
+    files: ["src/a.ts"],
+    argv: [],
+    pairs: [{ n: 1, file: "src/a.ts", request: "1.request.md", response: "1.response.json" }],
+    ...(git ? { git } : {}),
+  });
+  const res = await buildMatrixData(
+    historyDir,
+    [manifest("a"), manifest("b", { sha: "c".repeat(40), remote: "git@github.com:owner/repo.git" })],
+    {},
+  );
+  assert.equal(res.runs.length, 2);
+  assert.equal(res.runs[0]!.sha, undefined); // unstamped run stays link-less
+  assert.equal(res.runs[1]!.sha, "c".repeat(40));
+  assert.equal(res.runs[1]!.repo, "https://github.com/owner/repo");
 });

@@ -2,20 +2,19 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { formatPair } from "./answers.ts";
-import { askDirs, listAsks } from "./config.ts";
+import { askDirs, listAsks, resolveConfig } from "./config.ts";
 import { CliError } from "./errors.ts";
-import { layeredEnv } from "./env.ts";
-import { findRun, historyDir, listRuns, readPair, type RunManifest } from "./history.ts";
+import { findRun, getRunReportPath, historyDir, listRuns, readPair, type RunManifest } from "./history.ts";
 import { buildTreeData, loadAllManifests } from "./matrix.ts";
 import { BUILTIN } from "./render.ts";
 import { writeReport } from "./report.ts";
 import { runAsk } from "./run.ts";
 import { startServer } from "./serve.ts";
-import { newAskTemplate } from "./template.ts";
+import { newAskTemplate } from "./askfile.ts";
 
 export async function main(argv: string[]): Promise<number> {
-  const { folder, profile } = askDirs();
-  for (const [k, v] of Object.entries(await layeredEnv([path.join(profile, ".env"), path.join(folder, ".env")])))
+  const config = await resolveConfig();
+  for (const [k, v] of Object.entries(config.env))
     if (process.env[k] === undefined) process.env[k] = v;
   const [cmd, ...rest] = argv;
   if (cmd === undefined || cmd === "-h" || cmd === "--help") return usage(0);
@@ -29,7 +28,7 @@ export async function main(argv: string[]): Promise<number> {
   if (cmd === "show") return cmdShow(rest);
   if (cmd === "report") return cmdReport(rest);
   if (cmd === "serve") return cmdServe(rest);
-  return cmdRun(cmd, rest);
+  return cmdRun(cmd, rest, config.cwd, config.apiKey);
 }
 
 function usage(code: number): number {
@@ -204,9 +203,9 @@ async function cmdReport(rest: string[]): Promise<number> {
   return 0;
 }
 
-async function cmdRun(name: string, rest: string[], cwd: string = process.cwd()): Promise<number> {
+async function cmdRun(name: string, rest: string[], cwd: string = process.cwd(), apiKey?: string): Promise<number> {
   const flags = parseRunArgs(rest);
-  const key = process.env.TYPESAFE_API_KEY;
+  const key = apiKey ?? process.env.TYPESAFE_API_KEY;
   if (!key) throw new CliError("TYPESAFE_API_KEY is not set — put it in .questions/.env or export it");
   const result = await runAsk({
     name,
@@ -231,7 +230,7 @@ async function cmdRun(name: string, rest: string[], cwd: string = process.cwd())
   }
   if (flags.verbose) console.error(`run ${result.manifest.runId} recorded`);
   if (flags.html) {
-    const report = await writeReport(cwd, result.manifest.runId, path.join(historyDir(cwd), result.manifest.runId, "report.html"));
+    const report = await writeReport(cwd, result.manifest.runId, getRunReportPath(cwd, result.manifest.runId));
     if (flags.verbose) console.error(`[report] ${report}`);
   }
   return 0;

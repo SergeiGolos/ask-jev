@@ -68,6 +68,81 @@ export function parseQuestion(id: string, q: unknown, source: string): Question 
     }
   }
 }
+export type Tone = "ok" | "warn" | "bad" | "mut";
+
+export interface ParsedAnswer {
+  q: string;
+  numeric: number | null;
+  display: string;
+  tone: Tone;
+  confidence: number | null;
+  probabilities: [number, number][] | null;
+  /** Direct aliases for report and view callers */
+  v: number | null;
+  label: string;
+  conf: number | null;
+  probs: [number, number][] | null;
+}
+
+export function toneOf(v: number | null): Tone {
+  if (v === null) return "mut";
+  return v >= 7 ? "ok" : v >= 4 ? "warn" : "bad";
+}
+
+export function gradeOf(avg: number | null): string {
+  if (avg === null) return "—";
+  if (avg >= 9) return "S";
+  if (avg >= 8) return "A";
+  if (avg >= 6.5) return "B";
+  if (avg >= 5) return "C";
+  if (avg >= 3.5) return "D";
+  return "F";
+}
+
+/** Interpret one raw answer record into a typed ParsedAnswer; fail fast on invalid shapes. */
+export function parseAnswer(q: string, a: unknown): ParsedAnswer {
+  if (!isRecord(a)) throw new Error(`invalid answer for '${q}': expected record, got ${typeof a}`);
+
+  let conf: number | null = null;
+  if (typeof a.confidence === "number") conf = Math.round(a.confidence * 100);
+
+  let probs: [number, number][] | null = null;
+  if (isRecord(a.probabilities)) {
+    const ps = Object.entries(a.probabilities)
+      .filter(([k, p]) => /^-?\d+$/.test(k) && typeof p === "number")
+      .sort((x, y) => Number(x[0]) - Number(y[0]));
+    if (ps.length > 1) probs = ps.map(([k, p]) => [Number(k), p as number]);
+  }
+
+  let numeric: number | null = null;
+  if (typeof a.score === "number") {
+    numeric = a.score;
+  } else if (typeof a.choice === "string" || typeof a.choice === "number") {
+    const n = Number(a.choice);
+    if (!Number.isNaN(n)) numeric = n;
+  }
+
+  if (numeric !== null) {
+    const display = Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1);
+    const tone = toneOf(numeric);
+    return { q, numeric, display, tone, confidence: conf, probabilities: probs, v: numeric, label: display, conf, probs };
+  }
+
+  if (typeof a.noul === "number" || typeof a.noul === "boolean") {
+    const p = typeof a.noul === "boolean" ? (a.noul ? 1 : 0) : a.noul;
+    const isBad = p >= 0.5;
+    const display = isBad ? `rework ${Math.round(p * 100)}%` : `pass ${Math.round((1 - p) * 100)}%`;
+    const tone: Tone = isBad ? "bad" : "ok";
+    return { q, numeric: p, display, tone, confidence: conf, probabilities: probs, v: p, label: display, conf, probs };
+  }
+
+  if (a.choice !== undefined) {
+    const display = String(a.choice);
+    return { q, numeric: null, display, tone: "mut", confidence: conf, probabilities: probs, v: null, label: display, conf, probs };
+  }
+
+  throw new Error(`invalid answer for '${q}': missing score, choice, or noul`);
+}
 
 /** Human-readable block for one recorded pair (default terminal output). */
 export function formatPair(file: string, response: unknown): string {

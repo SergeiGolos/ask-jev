@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { CliError } from "../src/errors.ts";
-import { runAsk } from "../src/run.ts";
+import { gitStamp, runAsk } from "../src/run.ts";
 
 const ASK = `---
 model: test-model
@@ -134,4 +136,31 @@ test("runAsk with URL input: judged like a file and recorded under the URL", asy
   } finally {
     srv.close();
   }
+});
+
+test("gitStamp: undefined outside a repo, HEAD sha inside", async () => {
+  const bare = await mkdtemp(path.join(tmpdir(), "aj-bare-"));
+  assert.equal(await gitStamp(bare), undefined);
+  assert.match((await gitStamp(process.cwd()))!.sha, /^[0-9a-f]{40}$/);
+});
+
+test("runAsk stamps run.json with the analyzed tree's git HEAD sha", async () => {
+  const cwd = await fixture();
+  const git = promisify(execFile);
+  await git("git", ["init", "-q"], { cwd });
+  await git("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-qm", "init"], { cwd });
+  const result = await runAsk({
+    name: "review",
+    cwd,
+    argv: ["review", "-f", "src/a.ts"],
+    files: ["src/a.ts"],
+    tokens: {},
+    key: "k",
+    fetchImpl: judgeStub(),
+  });
+  const expected = (await git("git", ["rev-parse", "HEAD"], { cwd })).stdout.trim();
+  const runJson = JSON.parse(
+    await readFile(path.join(cwd, ".questions", "history", result.manifest.runId, "run.json"), "utf8"),
+  );
+  assert.equal(runJson.git?.sha, expected);
 });

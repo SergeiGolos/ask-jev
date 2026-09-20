@@ -9,6 +9,7 @@ export async function layeredEnv(
   files: string[],
   read: (p: string) => Promise<string> = (p) => readFile(p, "utf8"),
 ): Promise<Record<string, string>> {
+  if (!Array.isArray(files)) throw new TypeError("layeredEnv: files array is required");
   const merged: Record<string, string> = {};
   for (const file of files) {
     let text: string;
@@ -23,12 +24,14 @@ export async function layeredEnv(
 }
 
 function parseDotEnv(text: string): [string, string][] {
+  if (typeof text !== "string") throw new TypeError("parseDotEnv: text must be a string");
   const out: [string, string][] = [];
   for (const raw of text.split("\n")) {
-    const line = raw.trim();
+    let line = raw.trim();
     if (!line || line.startsWith("#")) continue;
+    if (line.startsWith("export ")) line = line.slice(7).trim();
     const eq = line.indexOf("=");
-    if (eq <= 0) continue; // ponytail: no `export` prefix, interpolation, or multiline values — add if an .env needs them
+    if (eq <= 0) continue;
     const key = line.slice(0, eq).trim();
     let value = line.slice(eq + 1).trim();
     if (
