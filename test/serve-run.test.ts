@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { startServer, type RunningServer } from "../src/serve.ts";
+import { listRuns } from "../src/history.ts";
 
 const ASK = `---
 model: test-model
@@ -78,9 +79,11 @@ test("POST /api/run judges a file, records the run, and the matrix sees it", asy
 
     const manifest = JSON.parse(
       await readFile(path.join(cwd, ".questions", "history", runId, "run.json"), "utf8"),
-    );
-    assert.equal(manifest.ask, "review");
+    ) as { asks: { ask: string }[]; files: string[]; pairs: { ask: string }[] };
+    assert.equal(manifest.asks[0]!.ask, "review");
+    assert.deepEqual(manifest.asks.map((a) => a.ask), ["review"]);
     assert.deepEqual(manifest.files, ["src/a.ts"]);
+    assert.equal(manifest.pairs[0]!.ask, "review");
 
     // cache was invalidated: the next matrix read covers the fresh run without a restart
     // cast: server returns MatrixResponse
@@ -162,9 +165,9 @@ test("GET /api/runs lists recorded runs and /report renders the run HTML", async
 
     const listRes = await fetch(`${srv.url}/api/runs`);
     assert.equal(listRes.status, 200);
-    const list = await listRes.json() as { runs: { runId: string; ask: string; pairCount: number }[] };
+    const list = await listRes.json() as { runs: { runId: string; asks: string[]; pairCount: number }[] };
     assert.deepEqual(list.runs.map((r) => r.runId), [runId]);
-    assert.equal(list.runs[0]!.ask, "review");
+    assert.deepEqual(list.runs[0]!.asks, ["review"]);
     assert.equal(list.runs[0]!.pairCount, 1);
 
     const reportRes = await fetch(`${srv.url}/api/runs/${runId}/report`);
@@ -193,7 +196,7 @@ test("GET /api/files lists workspace files", async () => {
   });
 });
 
-test("POST /api/run with multiple asks and batch flag", async () => {
+test("POST /api/run with multiple asks and batch flag records ONE run", async () => {
   const cwd = await fixture();
   const batchAsk = ASK.replace("Review {{filename}}:", "Review {{file}}:");
   await writeFile(path.join(cwd, ".questions", "review.md"), batchAsk);
@@ -204,12 +207,15 @@ test("POST /api/run with multiple asks and batch flag", async () => {
       JSON.stringify({ asks: ["review", "second"], files: ["src/a.ts", "src/b.ts"], batch: true }),
     );
     assert.equal(out.status, 200);
-    const json = out.json as { runId: string; runs: { ask: string }[]; pairs: unknown[] };
+    const json = out.json as { runId: string; asks: { ask: string }[]; pairs: unknown[] };
     assert.ok(json.runId);
-    assert.equal(json.runs.length, 2);
-    assert.deepEqual(json.runs.map((r) => r.ask), ["review", "second"]);
+    assert.deepEqual(json.asks.map((a) => a.ask), ["review", "second"]);
+    assert.equal(json.pairs.length, 2); // 2 asks × 1 batch pair each
     // batch mode: one call per ask with file = "batch"
     assert.deepEqual(calls, ["batch", "batch"]);
+
+    const manifests = await listRuns(cwd);
+    assert.equal(manifests.length, 1); // grouped, not one run per ask
   });
 });
 
@@ -224,9 +230,8 @@ test("POST /api/run expands directory to all contained questions", async () => {
       JSON.stringify({ ask: "suite", path: "src/a.ts" }),
     );
     assert.equal(out.status, 200);
-    const json = out.json as { runs: { ask: string }[] };
-    assert.equal(json.runs.length, 2);
-    assert.deepEqual(json.runs.map((r) => r.ask), ["suite/check1", "suite/check2"]);
+    const json = out.json as { asks: { ask: string }[] };
+    assert.deepEqual(json.asks.map((a) => a.ask), ["suite/check1", "suite/check2"]);
     assert.deepEqual(calls, ["src/a.ts", "src/a.ts"]);
   });
 });

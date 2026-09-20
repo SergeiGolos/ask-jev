@@ -4,11 +4,24 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { buildTreeData, buildMatrixData, githubRepoUrl } from "../src/matrix.ts";
-import { loadAllManifests } from "../src/history.ts";
 
-test("buildTreeData and buildMatrixData against project history", async () => {
-  const historyDir = path.join(process.cwd(), ".questions", "history");
-  const manifests = await loadAllManifests(historyDir);
+
+test("buildTreeData and buildMatrixData over a seeded history", async () => {
+  // Seeded, not repo-local: project history is mutable user data.
+  const historyDir = await mkdtemp(path.join(tmpdir(), "aj-matrix-"));
+  await mkdir(path.join(historyDir, "run-1"), { recursive: true });
+  await writeFile(
+    path.join(historyDir, "run-1", "1.response.json"),
+    JSON.stringify({ answers: { demeter: { score: 8 } } }),
+  );
+  const manifests = [{
+    runId: "run-1",
+    timestamp: "2026-01-01T00:00:00.000Z",
+    asks: [{ ask: "gut-feeling", askSource: "folder", model: "m" }],
+    files: ["src/uuid7.ts"],
+    argv: [],
+    pairs: [{ n: 1, ask: "gut-feeling", file: "src/uuid7.ts", request: "1.request.md", response: "1.response.json" }],
+  }];
   assert.ok(manifests.length >= 1);
 
   const tree = await buildTreeData(historyDir, manifests);
@@ -42,12 +55,10 @@ test("URL inputs group under a host directory and stack by verbatim URL", async 
   const manifest = (runId: string, timestamp: string, files: string[]) => ({
     runId,
     timestamp,
-    ask: "a",
-    askSource: "folder",
-    model: "m",
+    asks: [{ ask: "a", askSource: "folder", model: "m" }],
     files,
     argv: [],
-    pairs: files.map((f, i) => ({ n: i + 1, file: f, request: `${i + 1}.request.md`, response: `${i + 1}.response.json` })),
+    pairs: files.map((f, i) => ({ n: i + 1, ask: "a", file: f, request: `${i + 1}.request.md`, response: `${i + 1}.response.json` })),
   });
   const manifests = [
     manifest("a1", "2025-01-01T00:00:00.000Z", [url]),
@@ -85,12 +96,10 @@ test("githubRepoUrl and run-column git stamp passthrough", async () => {
   const manifest = (runId: string, git?: { sha: string; remote: string }) => ({
     runId,
     timestamp: runId === "b" ? "2025-01-02T00:00:00.000Z" : "2025-01-01T00:00:00.000Z",
-    ask: "a",
-    askSource: "folder",
-    model: "m",
+    asks: [{ ask: "a", askSource: "folder", model: "m" }],
     files: ["src/a.ts"],
     argv: [],
-    pairs: [{ n: 1, file: "src/a.ts", request: "1.request.md", response: "1.response.json" }],
+    pairs: [{ n: 1, ask: "a", file: "src/a.ts", request: "1.request.md", response: "1.response.json" }],
     ...(git ? { git } : {}),
   });
   const res = await buildMatrixData(
@@ -115,13 +124,10 @@ test("low-direction questions tone inverted in matrix cells and rollups", async 
   const manifest = {
     runId,
     timestamp: "2025-01-01T00:00:00.000Z",
-    ask: "a",
-    askSource: "folder",
-    model: "m",
+    asks: [{ ask: "a", askSource: "folder", model: "m", directions: { violations: "low" as const } }],
     files: ["src/a.ts"],
     argv: [],
-    pairs: [{ n: 1, file: "src/a.ts", request: "1.request.md", response: "1.response.json" }],
-    directions: { violations: "low" as const },
+    pairs: [{ n: 1, ask: "a", file: "src/a.ts", request: "1.request.md", response: "1.response.json" }],
   };
   const res = await buildMatrixData(historyDir, [manifest], { path: "src" });
   assert.equal(res.questions[0]!.id, "violations");

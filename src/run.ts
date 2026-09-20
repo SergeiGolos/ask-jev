@@ -31,7 +31,8 @@ export function judgeState(file: string, prompt: string, single: boolean): Recor
 }
 
 export interface RunOptions {
-  name: string;
+  /** Ask names to execute, in invocation order; ONE run records every ask × every file. */
+  names: string[];
   /** Positional argv as invoked, recorded verbatim in the manifest. */
   argv: string[];
   /** -f patterns; expanded against cwd. */
@@ -41,6 +42,8 @@ export interface RunOptions {
   batch?: boolean;
   /** Progress sink ([tool]/[judge] lines); silent when omitted. */
   log?: (line: string) => void;
+  /** Invoked with each judged pair as soon as it completes, in run order; drives streaming output. */
+  onPair?: (pair: RunResult["pairs"][number]) => void | Promise<void>;
   /** TypeSafe API key. */
   key: string;
   /** Judge transport seam. */
@@ -50,74 +53,86 @@ export interface RunOptions {
 
 export interface RunResult {
   manifest: RunManifest;
-  model: string;
-  /** One pair per judged input, in run order; pairs[i] corresponds to files[i] unless batch. */
-  pairs: { file: string; request: string; response: JudgeResult; notes: PairRecord["notes"] }[];
+  /** One pair per judged input across all asks, in run order. */
+  pairs: { ask: string; file: string; request: string; response: JudgeResult; notes: PairRecord["notes"] }[];
 }
 
 /**
- * One ask run: resolve the ask, render one prompt per file (or a single batch prompt),
- * judge each, and record the run directory. Run policy — batch naming, state mode,
- * latency, notes — lives here; the CLI only translates argv and prints.
+ * One ask run over every named ask: validate all asks up front (no judge calls are spent on
+ * an unknown name), render one prompt per file per ask (or a single batch prompt per ask),
+ * judge each, and record ONE run directory. When the run covers several asks, question ids
+ * are prefixed `<ask>/` so identical schema ids across asks cannot collide.
  */
 export async function runAsk(o: RunOptions): Promise<RunResult> {
   const cwd = o.cwd ?? process.cwd();
-  const found = await resolveAsk(o.name, cwd);
-  if (!found) {
-    const { folder, profile } = askDirs(cwd);
-    throw new Error(`no ask '${o.name}' in ${folder} or ${profile}`);
-  }
-  const ask = await readAsk(found.file);
-  assertRunnable(ask, o.name);
   const files = await expandInputs(o.files, cwd);
   const batch = o.batch ?? false;
-  const rendered = await renderPrompts({
-    ask,
-    files,
-    tokens: o.tokens,
-    batch,
-    cwd,
-    onToolStart: o.log ? (cmd) => o.log!(`[tool] $ ${cmd}`) : undefined,
-  });
-  const model = ask.meta.model ?? "jev-latest";
-  const directions = Object.fromEntries(
-    Object.entries(ask.schema ?? {})
-      .filter(([, q]) => q.direction === "low")
-      .map(([id]) => [id, "low" as const]),
-  );
+  const pfx = o.names.length > 1 ? (name: string) => `${name}/` : () => "";
+
+  const prepared = [];
+  for (const name of o.names) {
+    const found = await resolveAsk(name, cwd);
+    if (!found) {
+      const { folder, profile } = askDirs(cwd);
+      throw new Error(`no ask '${name}' in ${folder} or ${profile}`);
+    }
+    const ask = await readAsk(found.file);
+    assertRunnable(ask, name);
+    // assertRunnable guarantees a non-empty schema
+    const schema = Object.fromEntries(Object.entries(ask.schema).map(([id, q]) => [pfx(name) + id, q]));
+    const directions = Object.fromEntries(
+      Object.entries(schema).filter(([, q]) => q.direction === "low").map(([id]) => [id, "low" as const]),
+    );
+    prepared.push({ name, found, ask, schema, directions, model: ask.meta.model ?? "jev-latest" });
+  }
 
   const pairs: RunResult["pairs"] = [];
-  for (let i = 0; i < rendered.length; i++) {
-    const r = rendered[i]!;
-    const file = batch || files.length === 0 ? "batch" : files[i]!;
-    const t0 = Date.now();
-    const res = await judge({
-      key: o.key,
-      model,
-      questions: ask.schema,
-      state: judgeState(file, r.prompt, !batch && files.length > 0),
-      fetchImpl: o.fetchImpl,
+  for (const p of prepared) {
+    const rendered = await renderPrompts({
+      ask: p.ask,
+      files,
+      tokens: o.tokens,
+      batch,
+      cwd,
+      onToolStart: o.log ? (cmd) => o.log!(`[tool] $ ${cmd}`) : undefined,
     });
-    const latencyMs = Date.now() - t0;
-    o.log?.(`[judge] ${file} ${res.model} ${latencyMs} ms`);
-    pairs.push({
-      file,
-      request: r.prompt,
-      response: res,
-      notes: { tools: r.tools.map((command) => ({ command })), judge: { model: res.model, usage: res.usage, latencyMs } },
-    });
+    for (let i = 0; i < rendered.length; i++) {
+      const r = rendered[i]!;
+      const file = batch || files.length === 0 ? "batch" : files[i]!;
+      const t0 = Date.now();
+      const res = await judge({
+        key: o.key,
+        model: p.model,
+        questions: p.schema,
+        state: judgeState(file, r.prompt, !batch && files.length > 0),
+        fetchImpl: o.fetchImpl,
+      });
+      const latencyMs = Date.now() - t0;
+      o.log?.(`[judge] ${p.name}/${file} ${res.model} ${latencyMs} ms`);
+      const pair: RunResult["pairs"][number] = {
+        ask: p.name,
+        file,
+        request: r.prompt,
+        response: res,
+        notes: { tools: r.tools.map((command) => ({ command })), judge: { model: res.model, usage: res.usage, latencyMs } },
+      };
+      pairs.push(pair);
+      await o.onPair?.(pair);
+    }
   }
 
   const manifest = await recordRun(cwd, {
-    ask: o.name,
-    askSource: found.source,
-    model,
+    asks: prepared.map((p) => ({
+      ask: p.name,
+      askSource: p.found.source,
+      model: p.model,
+      schema: p.schema,
+      directions: Object.keys(p.directions).length > 0 ? p.directions : undefined,
+    })),
     files,
     argv: o.argv,
     pairs,
-    schema: ask.schema,
-    directions: Object.keys(directions).length > 0 ? directions : undefined,
     git: await gitStamp(cwd),
   });
-  return { manifest, model, pairs };
+  return { manifest, pairs };
 }

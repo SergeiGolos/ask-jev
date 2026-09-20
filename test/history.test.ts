@@ -11,21 +11,27 @@ const SCHEMA = parseAsk("---\nmodel: m\n---\nbody\n---\nseverity:\n  type: score
 
 function seedInput(now: number): RunInput {
   return {
-    ask: "count",
-    askSource: "folder",
-    model: "jev-latest",
+    asks: [
+      {
+        ask: "count",
+        askSource: "folder",
+        model: "jev-latest",
+        schema: SCHEMA,
+      },
+    ],
     files: ["src/a.ts", "src/b.ts"],
     argv: ["count", "-f", "src/*.ts"],
-    schema: SCHEMA,
     now,
     pairs: [
       {
+        ask: "count",
         file: "src/a.ts",
         request: "Review src/a.ts\n```output\n$ wc -l src/a.ts\n4\n```",
         response: { answers: { severity: { type: "score", score: 2.1 } } },
         notes: { tools: [{ command: "wc -l src/a.ts" }], judge: { model: "jev-1.13.0", latencyMs: 210 } },
       },
       {
+        ask: "count",
         file: "src/b.ts",
         request: "Review src/b.ts",
         response: { answers: { severity: { type: "score", score: 1 } } },
@@ -48,14 +54,15 @@ test("recordRun writes the locked layout with schema appended to requests", asyn
   const manifest = await recordRun(cwd, seedInput(1_700_000_000_000));
   assert.equal(manifest.pairs.length, 2);
   assert.equal(manifest.timestamp, "2023-11-14T22:13:20.000Z");
-  const request = await readFile(path.join(cwd, ".questions", "history", manifest.runId, "001-src-a-ts.request.md"), "utf8");
+  const request = await readFile(path.join(cwd, ".questions", "history", manifest.runId, "001-count-src-a-ts.request.md"), "utf8");
   assert.ok(request.includes("Review src/a.ts")); // rendered prompt verbatim
   assert.ok(request.includes("type: score")); // schema appended for reference
   assert.ok(request.includes("ask schema (reference only)"));
-  const response = JSON.parse(await readFile(path.join(cwd, ".questions", "history", manifest.runId, "002-src-b-ts.response.json"), "utf8"));
+  const response = JSON.parse(await readFile(path.join(cwd, ".questions", "history", manifest.runId, "002-count-src-b-ts.response.json"), "utf8"));
   assert.deepEqual(response, { answers: { severity: { type: "score", score: 1 } } });
   const runJson = JSON.parse(await readFile(path.join(cwd, ".questions", "history", manifest.runId, "run.json"), "utf8"));
-  assert.equal(runJson.ask, "count");
+  assert.equal(runJson.asks[0]!.ask, "count");
+  assert.equal(runJson.pairs[1]!.ask, "count");
   assert.equal(runJson.pairs[1]!.file, "src/b.ts");
 });
 
@@ -64,9 +71,9 @@ test("batch runs get a single pair with the batch slug", async () => {
   const manifest = await recordRun(cwd, {
     ...seedInput(0),
     files: ["src/a.ts", "src/b.ts"],
-    pairs: [{ file: "batch", request: "all files", response: { answers: {} } }],
+    pairs: [{ ask: "count", file: "batch", request: "all files", response: { answers: {} } }],
   });
-  assert.deepEqual(manifest.pairs.map((p) => p.request), ["001-batch.request.md"]);
+  assert.deepEqual(manifest.pairs.map((p) => p.request), ["001-count-batch.request.md"]);
 });
 
 test("listRuns sorts chronologically and skips junk", async () => {

@@ -10,6 +10,8 @@ export interface AskMeta {
   model?: string;
   args?: Record<string, Scalar>;
   description?: string;
+  /** Path patterns triggering this ask when `ask serve --watch` sees a matching file change. */
+  grep?: string[];
   schema?: Questions;
 }
 
@@ -55,6 +57,16 @@ export function readAskMeta(data: Record<string, unknown>, source = "ask file"):
       args[k] = v;
     }
     meta.args = args;
+  }
+  if (data.grep !== undefined) {
+    const list = Array.isArray(data.grep) ? data.grep : [data.grep];
+    const grep: string[] = [];
+    for (const g of list) {
+      if (typeof g !== "string")
+        throw new Error(`${source}: front matter 'grep' must be a string or a list of strings`);
+      grep.push(g);
+    }
+    meta.grep = grep;
   }
   const rawSchema = data.schema ?? data.questions;
   if (rawSchema !== undefined) {

@@ -8,21 +8,30 @@
   <script type="module" src="/app.js?v=5"></script>
 </head>
 <body>
+  <header class="topbar">
+    <div class="crumbs">
+      <span class="brand-title">ask</span>
+      <span class="crumb-sep">▸</span>
+      <span class="crumb-view" id="crumbView">trends</span>
+      <span class="crumb-target-wrap" id="crumbTargetWrap" style="display: none;">
+        <span class="crumb-sep">▸</span>
+        <span class="crumb-target" id="crumbTarget"></span>
+      </span>
+    </div>
+    <nav class="view-tabs">
+      <button type="button" class="view-tab active" id="tabTrends" title="View trend matrix">Trends</button>
+      <button type="button" class="view-tab" id="tabRuns" title="Browse recorded runs">Runs</button>
+      <button type="button" class="view-tab" id="tabQuestions" title="Manage and edit questions">Questions</button>
+    </nav>
+    <div class="topbar-utils">
+      <button type="button" class="icon-btn" id="themeBtn" title="Toggle dark / light">
+        <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14"><path d="M8 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0-1.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM8 0a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V.75A.75.75 0 0 1 8 0Zm0 12.75a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5a.75.75 0 0 1 .75-.75ZM1.75 7.25h1.5a.75.75 0 0 1 0 1.5h-1.5a.75.75 0 0 1 0-1.5Zm10.5 0h1.5a.75.75 0 0 1 0 1.5h-1.5a.75.75 0 0 1 0-1.5ZM2.63 2.63a.75.75 0 0 1 1.06 0l1.06 1.06a.75.75 0 1 1-1.06 1.06L2.63 3.69a.75.75 0 0 1 0-1.06Zm8.38 8.38a.75.75 0 0 1 1.06 0l1.06 1.06a.75.75 0 1 1-1.06 1.06l-1.06-1.06a.75.75 0 0 1 0-1.06ZM13.37 2.63a.75.75 0 0 1 0 1.06l-1.06 1.06a.75.75 0 1 1-1.06-1.06l1.06-1.06a.75.75 0 0 1 1.06 0ZM4.81 11.69a.75.75 0 0 1 0 1.06l-1.06 1.06a.75.75 0 1 1-1.06-1.06l1.06-1.06a.75.75 0 0 1 1.06 0Z"/></svg>
+      </button>
+    </div>
+  </header>
   <div class="layout">
     <aside class="sidebar">
       <div class="sidebar-header">
-        <div class="brand-row">
-          <div class="brand">
-            <span class="brand-title">ask</span>
-            <span class="brand-sub" id="brandSub">trends</span>
-          </div>
-          <div class="view-tabs">
-            <button type="button" class="view-tab active" id="tabTrends" title="View trend matrix">Trends</button>
-            <button type="button" class="view-tab" id="tabRuns" title="Browse recorded runs">Runs</button>
-            <button type="button" class="view-tab" id="tabQuestions" title="Manage and edit questions">Questions</button>
-          </div>
-        </div>
-
         <!-- Trends Search -->
         <div class="sidebar-search" id="trendsSearchWrap">
           <input type="text" id="treeFilter" placeholder="Filter files..." autocomplete="off">
@@ -120,6 +129,13 @@
             <tbody id="matrixBody"></tbody>
           </table>
         </div>
+        <div class="matrix-legend" id="matrixLegend">
+          <span><i class="sw sw-ok"></i>ok ≥7</span>
+          <span><i class="sw sw-warn"></i>warn 4–7</span>
+          <span><i class="sw sw-bad"></i>bad &lt;4</span>
+          <span><i class="sw sw-mut"></i>non-numeric</span>
+          <span class="legend-note">delta = vs previous run (older column →)</span>
+        </div>
       </section>
     </main>
 
@@ -198,6 +214,7 @@
         <h3>No Run Selected</h3>
         <p>Select a recorded run from the sidebar to view its report.</p>
       </div>
+      <div class="runbar" id="runHeaderBar" style="display: none;"></div>
       <iframe class="run-report-frame" id="runReportFrame" style="display: none;" title="Run report"></iframe>
     </main>
   </div>

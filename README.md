@@ -1,134 +1,164 @@
 # ask-jev
 
-Hand-authored question configurations evaluated by **TypeSafe System One** (Jev) with automatic history recording, interactive HTML reports, and a temporal trend dashboard.
+`ask-jev` is a tool for asking focused questions about your files and tracking the answers over time. It runs your questions against **TypeSafe System One** (Jev), records every run automatically, and gives you visual reports and trend screens to see how your code evolves.
 
 ---
 
-## The Wayfind (Mental Model)
+## What it does
 
-```
-       .questions/<name>.md
-     (frontmatter + prompt + schema)
-                 │
-                 ▼
-         ask <name> -f <target>
-                 │
-      ┌──────────┴──────────┐
-      ▼                     ▼
- Per-File Mode          Batch Mode
-(1 call / file)      (1 call / all)
-      │                     │
-      └──────────┬──────────┘
-                 ▼
-        TypeSafe Judge API
-                 │
-                 ▼
-     .questions/history/<run-id>/
-    ├── run.json
-    ├── 001-<slug>.request.md
-    ├── 001-<slug>.response.json
-    └── report.html
-                 │
-                 ▼
-        ask serve
-    (Trend Matrix Dashboard)
-```
+Most code analysis tools give you static errors or warnings. `ask-jev` lets you ask subjective or qualitative questions about your files—like "Is this function doing too much?", "Are these error messages helpful?", or "Does this module follow our naming conventions?"
 
-1. **Questions (`.questions/<name>.md`)**: An ask is a single markdown file defining execution metadata, a prompt template with `{{token}}` placeholders (Mustache), optional executable shell tool blocks, and a YAML questions schema.
-2. **Runs & History (`.questions/history/<runId>/`)**: Every run is assigned a time-sorted UUIDv7 identifier. The exact prompt rendered and the raw JSON response from the judge are persisted for every file, creating an immutable audit trail.
-3. **Reports & Visualization**:
-   - **CLI Table / JSON**: Instant terminal scores and JSON output for CI scripting.
-   - **Interactive HTML Report**: Expandable three-level pair inspection (Result → Composition → Verbose console).
-   - **Trend Matrix Server**: A web dashboard (`ask serve`) displaying question criteria over time, file/folder rollups, and delta trends.
+- **Ask questions about your files**: Define questions in simple Markdown files and run them against any file or folder.
+- **Track code evolution**: Every run is saved. See whether scores improve or regress as code changes.
+- **Search across runs, questions, and files**: Search past runs, inspect specific files, or find questions and their answers.
+- **Detailed execution details**: Inspect the exact prompt sent to the judge and the full response for every file.
+- **Trend dashboard**: Explore interactive trend screens to track scores, deltas, and changes across files and directories over time.
 
 ---
 
-## Quick Start
+## How it works
 
-### 1. Prerequisites
-- **Node.js**: `>= 24`
-- **TypeSafe API Key**: Set `TYPESAFE_API_KEY` in your environment or in `.questions/.env`:
-  ```bash
-  mkdir -p .questions
-  echo "TYPESAFE_API_KEY=your_key_here" > .questions/.env
-  ```
-- **Install the CLI** (command name: `ask`):
-  ```bash
-  npm install -g ask-jev
-  ```
-
-### 2. Scaffold a Question
-
-```bash
-ask new review
+```
+   Write questions in Markdown (.questions/<name>.md)
+                        │
+                        ▼
+          Run: ask <name> -f <files>
+                        │
+                        ▼
+       TypeSafe Judge evaluates each file
+                        │
+                        ▼
+      Results saved to .questions/history/
+      (prompt, response, and score manifest)
+                        │
+                        ▼
+          Explore trends: ask serve
+   (Search runs, inspect files, and track scores)
 ```
 
-This creates `.questions/review.md` from the built-in template with front matter, prompt body, and question schema.
+1. **Questions (`.questions/<name>.md`)**: You write questions in Markdown with instructions and scoring criteria.
+2. **Runs & History (`.questions/history/<run-id>/`)**: Every run saves the exact prompt, raw judge response, and scores. This creates an audit log of how each file was judged.
+3. **Inspection & Trends**:
+   - **Terminal output**: Instant scores and deltas compared to prior runs.
+   - **Interactive HTML reports**: Detailed per-file results with prompt and response details.
+   - **Web dashboard (`ask serve`)**: Search runs, filter by questions or files, and view trend matrices with score deltas over time.
 
-### 3. Run the Ask
+---
+
+## Getting Started
+
+Follow these steps to set up `ask-jev`, ask your first question about a file, and view the results.
+
+### 1. Install and set your API key
+
+You need Node.js 24 or newer and a TypeSafe API key.
+
+Install the CLI globally:
 
 ```bash
-# Judge each matching file individually
-ask review -f 'src/**/*.ts'
-
-# Run in batch mode (single judge call over all matched files)
-ask review -f 'src/**/*.ts' --batch
-
-# Generate an interactive HTML report
-ask review -f src/cli.ts --html
+npm install -g ask-jev
 ```
 
-### 4. Explore History and Trends
+Set your TypeSafe API key in your environment or in `.questions/.env`:
+
+```bash
+mkdir -p .questions
+echo "TYPESAFE_API_KEY=your_key_here" > .questions/.env
+```
+
+### 2. Create your first question
+
+Create a starter question file:
+
+```bash
+ask new code-review
+```
+
+This creates `.questions/code-review.md` with starter scoring criteria. You can edit this file in any text editor to customize the prompt or the questions.
+
+### 3. Run the question on your files
+
+Run your question against one or more files:
+
+```bash
+# Check one file
+ask code-review -f src/index.ts
+
+# Check all files matching a pattern
+ask code-review -f 'src/**/*.ts'
+```
+
+The terminal shows scores for each file. If you have run this question before, it also shows whether the score went up or down.
+
+### 4. View detailed execution details
+
+Generate an interactive HTML report to inspect the exact prompt and response:
+
+```bash
+ask code-review -f src/index.ts --html
+```
+
+Or inspect past runs directly in your terminal:
 
 ```bash
 # List past runs
 ask history
 
-# View raw request & response pair
+# View the exact prompt and response for pair #1 of a run
 ask show <run-id> 1
+```
 
-# Launch the trend dashboard
+### 5. Open the trend dashboard
+
+Launch the local web dashboard:
+
+```bash
 ask serve
 ```
+
+Open `http://localhost:3000` in your browser. From the dashboard, you can:
+- **Search files and folders**: Filter the file tree to see how specific components score.
+- **Track trends**: View score changes over time with color-coded deltas and sparklines.
+- **Browse runs**: Search past runs, inspect execution details, and view full reports.
+- **Manage questions**: Edit questions and schemas directly in the browser.
 
 ---
 
 ## Core Features
 
-- **Markdown-First Authoring**: Write questions naturally in markdown with standard YAML front matter and schemas.
-- **Dynamic Tool Blocks**: Inline ```shell blocks (e.g. `git diff`, `git log`) that execute before judging and insert their stdout into the prompt.
-- **Typed Question Schemas**:
-  - `score`: Ordinal scales across descriptive criteria levels (0 to N-1).
+- **Markdown-first questions**: Write questions in Markdown with YAML front matter and scoring schemas.
+- **Dynamic tool blocks**: Run shell commands (such as `git diff` or `git log`) before judging and insert their output into the prompt.
+- **Flexible question types**:
+  - `score`: Numeric ratings across defined criteria levels (for example, 0 to 3).
   - `choice`: Categorical classifications mapped to option rubrics.
-  - `noul`: Probabilistic binary true/false judgments.
-  - `direction: low` per question marks lower-is-better scales (violations, severity), so low scores render green instead of red; judge confidence renders as a low→high trust meter in reports.
-- **Granular vs Batch Execution**:
-  - **Per-file** (default): Granular per-file scores and file-level accountability.
-  - **Batch** (`--batch`): Aggregates all files into a single judge call to minimize API requests and judge holistic relationships.
-- **Layered Ask Discovery**:
-  - Project asks (`./.questions/<name>.md`) shadow Profile asks (`~/.questions/<name>.md`). Keep common personal asks in your home directory and project-specific asks in the repo.
-- **Immutable Run Lineage**: Every run records the rendered markdown prompt, reference schema, and raw model output under `.questions/history/<runId>/`.
-- **Standalone Interactive HTML Reports**: Self-contained single-file HTML reports generated on-demand with zero external runtime dependencies.
-- **Trend Matrix Dashboard**: Web UI mapping questions (rows) against runs (columns) with temporal delta tracking, sparklines, and directory rollups.
-
+  - `noul`: Binary true/false checks with confidence ratings.
+  - `direction: low`: Marks lower-is-better metrics (like bug severity or code smells) so lower scores display in green instead of red.
+- **Per-file or batch evaluation**:
+  - **Per-file** (default): Scores each file individually so you can see file-level changes.
+  - **Batch** (`--batch`): Combines files into one judge call to review relationships across files and reduce API usage.
+- **Project and profile questions**:
+  - Save project-specific questions in `./.questions/<name>.md`.
+  - Save shared personal questions in `~/.questions/<name>.md`. Local questions take precedence over personal ones.
+- **Complete run history**: Every run saves the exact prompt, reference schema, and raw model output under `.questions/history/<runId>/`.
+- **Interactive HTML reports**: View self-contained HTML reports with score summaries and expandable prompt/response details.
+- **Trend dashboard**: A web interface (`ask serve`) that plots questions against runs, showing score deltas, sparkline trends, and directory rollups.
 ---
 
-## CLI Commands Overview
+## CLI Commands
 
 | Command | Description |
 |---|---|
-| `ask list` | List available asks in `./.questions` and `~/.questions` |
-| `ask new <name> [--force]` | Scaffold a new question template in `.questions/<name>.md` |
-| `ask <ask> -f <path\|glob>...` | Execute an ask against target files |
-| `ask history [run-id]` | List past run manifests or inspect a single run |
-| `ask history [run-id] -f <file>` | Diff a file's answers vs the prior run of the same ask |
-| `ask clean [--force]` | Delete all recorded runs under `.questions/history/` |
-| `ask show <run-id> [pair#]` | Print raw request markdown and response JSON for a pair |
-| `ask report [run-id] [-o file]` | Generate interactive HTML report |
-| `ask serve [path] [--port 3000]` | Start the local Trend Matrix web dashboard |
+| `ask list` | List available questions in `./.questions` and `~/.questions` |
+| `ask new <name> [--force]` | Create a new question template in `.questions/<name>.md` |
+| `ask <name> -f <path\|glob>...` | Run questions against target files |
+| `ask history [run-id]` | List past runs or inspect a specific run |
+| `ask history [run-id] -f <file>` | Compare a file's answers against its previous run |
+| `ask clean [--force]` | Delete recorded run history from `.questions/history/` |
+| `ask show <run-id> [pair#]` | View the exact prompt and response recorded for a file in a run |
+| `ask report [run-id] [-o file]` | Generate an interactive HTML report |
+| `ask serve [path] [--port 3000] [--watch]` | Start the local web dashboard; `--watch` runs questions when matching files change |
 
-See [docs/cli.md](docs/cli.md) for detailed flag references, arguments, and examples.
-
+See [docs/cli.md](docs/cli.md) for full flag descriptions, arguments, and examples.
 ---
 
 ## Markdown Question Format
@@ -165,16 +195,16 @@ clarity:
 See [docs/markdown-format.md](docs/markdown-format.md) for the complete format specification and recipes.
 
 ---
-
 ## Documentation
 
-Detailed references are available in the [`docs/`](docs/) directory:
-- [CLI Reference](docs/cli.md) — Exhaustive documentation of all commands, arguments, flags, and environment variables.
-- [Markdown Format Guide](docs/markdown-format.md) — Anatomy of an ask file, token substitution, tool execution, and schema definitions.
+Detailed reference documents are available in the [`docs/`](docs/) directory:
+- [CLI Reference](docs/cli.md): Commands, arguments, options, and environment variables.
+- [Markdown Format Guide](docs/markdown-format.md): Anatomy of a question file, variables, shell tools, and question schemas.
+- [Web UI Views](docs/views.md): Overview of dashboard views, routes, and data flow.
 
 ---
 
-## Architecture & Implementation
+## Architecture
 
 ```
 src/
@@ -182,12 +212,12 @@ src/
 ├── run.ts          # Pipeline coordination: discovery, rendering, judging, recording
 ├── askfile.ts      # Markdown parser, metadata inspection, and scaffolding template
 ├── render.ts       # Token substitution, batch layout, and shell tool execution
-├── judge.ts        # TypeSafe API client (POST /v1/judge)
 ├── answers.ts      # Typed question schemas (score/choice/noul) & result formatting
 ├── history.ts      # Run persistence under .questions/history/ (manifest, request/response)
 ├── report.ts       # Interactive HTML report generator
 ├── matrix.ts       # Trend matrix query engine, time-series data, and rollups
 ├── serve.ts        # HTTP server hosting web dashboard & REST API
+├── watch.ts        # Grep-trigger map and fs watcher for `ask serve --watch`
 ├── config.ts       # Directory resolution (.questions vs ~/.questions)
 ├── env.ts          # Layered .env loader (.questions/.env & ~/.questions/.env)
 ├── uuid7.ts        # Time-sortable UUIDv7 generator

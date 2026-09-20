@@ -34,11 +34,9 @@ async function setupFixture(): Promise<string> {
   return cwd;
 }
 
-test("cli main executes multiple questions positionally and with -q", async () => {
+test("cli main runs multiple questions as ONE grouped run", async () => {
   const cwd = await setupFixture();
-  const origCwd = process.cwd();
   const origFetch = globalThis.fetch;
-  const recordedAsks: string[] = [];
 
   globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
     return Response.json({ model: "jev-1", answers: { severity: { score: 1 } } });
@@ -49,24 +47,25 @@ test("cli main executes multiple questions positionally and with -q", async () =
     const code1 = await main(["q1", "q2", "-f", "src/a.ts"], cwd);
     assert.equal(code1, 0);
 
+    // BOTH questions land in ONE run: two asks × one file = two pairs
     const runs1 = await listRuns(cwd);
-    assert.equal(runs1.length, 2);
-    const asks1 = runs1.map((r) => r.ask).sort();
-    assert.deepEqual(asks1, ["q1", "q2"]);
+    assert.equal(runs1.length, 1);
+    assert.deepEqual(runs1[0]!.asks, ["q1", "q2"]);
+    assert.equal(runs1[0]!.pairCount, 2);
 
     // Run with -q flags
     const code2 = await main(["-q", "q1", "-q", "q2", "-f", "src/a.ts"], cwd);
     assert.equal(code2, 0);
 
     const runs2 = await listRuns(cwd);
-    assert.equal(runs2.length, 4);
+    assert.equal(runs2.length, 2);
 
     // Run with batch flag
     const code3 = await main(["q1", "q2", "--batch", "-f", "src/a.ts"], cwd);
     assert.equal(code3, 0);
 
     const runs3 = await listRuns(cwd);
-    assert.equal(runs3.length, 6);
+    assert.equal(runs3.length, 3);
   } finally {
     globalThis.fetch = origFetch;
   }
@@ -82,7 +81,6 @@ test("cli main fails with error when no question is provided", async () => {
 
 test("cli main expands directory to all questions contained in it", async () => {
   const cwd = await setupFixture();
-  const origCwd = process.cwd();
   const origFetch = globalThis.fetch;
 
   globalThis.fetch = (async () => {
@@ -95,9 +93,8 @@ test("cli main expands directory to all questions contained in it", async () => 
     assert.equal(code, 0);
 
     const runs = await listRuns(cwd);
-    assert.equal(runs.length, 2);
-    const asks = runs.map((r) => r.ask).sort();
-    assert.deepEqual(asks, ["audit/rule1", "audit/rule2"]);
+    assert.equal(runs.length, 1); // both expanded asks group into ONE run
+    assert.deepEqual(runs[0]!.asks, ["audit/rule1", "audit/rule2"]);
   } finally {
     globalThis.fetch = origFetch;
   }
@@ -105,7 +102,6 @@ test("cli main expands directory to all questions contained in it", async () => 
 
 test("cli main expands question globs like dir/* or prefix*", async () => {
   const cwd = await setupFixture();
-  const origCwd = process.cwd();
   const origFetch = globalThis.fetch;
 
   globalThis.fetch = (async () => {
@@ -118,9 +114,8 @@ test("cli main expands question globs like dir/* or prefix*", async () => {
     assert.equal(code, 0);
 
     const runs = await listRuns(cwd);
-    assert.equal(runs.length, 2);
-    const asks = runs.map((r) => r.ask).sort();
-    assert.deepEqual(asks, ["audit/rule1", "audit/rule2"]);
+    assert.equal(runs.length, 1);
+    assert.deepEqual(runs[0]!.asks, ["audit/rule1", "audit/rule2"]);
   } finally {
     globalThis.fetch = origFetch;
   }

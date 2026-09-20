@@ -54,8 +54,9 @@ export interface MatrixQuestionRow {
 export interface MatrixRunCol {
   runId: string;
   timestamp: string;
-  ask: string;
-  model: string;
+  /** Asks executed in this run, in invocation order. */
+  asks: string[];
+  models: string[];
   /** Git stamp of the analyzed tree, when the run recorded one. */
   sha?: string;
   /** GitHub repo base URL derived from the origin remote; undefined for non-GitHub remotes. */
@@ -92,7 +93,7 @@ export async function buildTreeData(historyDir: string, manifests: RunManifest[]
   let maxTime = "";
 
   for (const m of manifests) {
-    askSet.add(m.ask);
+    for (const a of m.asks) askSet.add(a.ask);
     if (!minTime || m.timestamp < minTime) minTime = m.timestamp;
     if (!maxTime || m.timestamp > maxTime) maxTime = m.timestamp;
 
@@ -105,7 +106,7 @@ export async function buildTreeData(historyDir: string, manifests: RunManifest[]
         fileRunCounts.set(norm, item);
       }
       item.count++;
-      item.asks.add(m.ask);
+      for (const a of m.asks) item.asks.add(a.ask);
     }
 
     if (m.pairs.length > 0) {
@@ -209,7 +210,7 @@ export async function buildMatrixData(
   }
 
   const filteredRuns = manifests.filter((m) => {
-    if (query.ask && m.ask !== query.ask) return false;
+    if (query.ask && !m.asks.some((a) => a.ask === query.ask)) return false;
     if (query.from && m.timestamp < query.from) return false;
     if (query.to && m.timestamp > query.to) return false;
     return true;
@@ -219,8 +220,9 @@ export async function buildMatrixData(
   const isFolder = !isFile;
 
   // Per-question direction (lower-is-better), newest manifest that records it wins.
+  // Question ids are ask-prefixed inside multi-ask runs, so flat merge cannot clobber across asks.
   const directions: Record<string, Direction> = {};
-  for (const m of manifests) Object.assign(directions, m.directions ?? {});
+  for (const m of manifests) for (const a of m.asks) Object.assign(directions, a.directions ?? {});
 
   const matchFile = (filePath: string): boolean => {
     const norm = path.normalize(filePath);
@@ -237,6 +239,7 @@ export async function buildMatrixData(
   for (const m of filteredRuns) {
     const matchingPairs: PairRecord[] = [];
     for (const p of m.pairs) {
+      if (query.ask && p.ask !== query.ask) continue; // the column stays, but only the queried ask's answers feed rows
       if (matchFile(p.file)) {
         matchingPairs.push(p);
       }
@@ -246,13 +249,13 @@ export async function buildMatrixData(
     matchingRuns.push({
       runId: m.runId,
       timestamp: m.timestamp,
-      ask: m.ask,
-      model: m.model,
+      asks: m.asks.map((a) => a.ask),
+      models: m.asks.map((a) => a.model),
       sha: m.git?.sha,
       repo: githubRepoUrl(m.git?.remote),
     });
 
-    const qAnswersMap = new Map<string, ParsedAnswer[]>();
+    const qAnswersMap = new Map<string, { parsed: ParsedAnswer; ask: string }[]>();
 
     for (const p of matchingPairs) {
       let respObj: unknown;
@@ -267,18 +270,18 @@ export async function buildMatrixData(
           list = [];
           qAnswersMap.set(parsed.q, list);
         }
-        list.push(parsed);
+        list.push({ parsed, ask: p.ask });
       }
     }
 
-    for (const [qid, answers] of qAnswersMap.entries()) {
+    for (const [qid, entries] of qAnswersMap.entries()) {
       let row = questionRowsMap.get(qid);
       if (!row) {
-        row = { ask: m.ask, cells: {} };
+        row = { ask: entries[0]!.ask, cells: {} };
         questionRowsMap.set(qid, row);
       }
 
-      const agg = aggregateCell(answers);
+      const agg = aggregateCell(entries.map((e) => e.parsed));
       row.cells[m.runId] = {
         runId: m.runId,
         timestamp: m.timestamp,

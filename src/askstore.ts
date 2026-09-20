@@ -33,6 +33,8 @@ export interface AskEntry {
   /** "(invalid)" when the ask fails to parse; the message is in parseError. */
   model: string;
   args: Record<string, unknown>;
+  /** Grep patterns from front matter driving `ask serve --watch` triggers. */
+  grep: string[];
   isRunnable: boolean;
   source: AskSource;
   mtime: number;
@@ -97,11 +99,12 @@ async function parseDetail(fullPath: string, relPath: string, source: AskSource,
       description: parsed.meta.description ?? "",
       model: parsed.meta.model ?? "-",
       args: (parsed.meta.args ?? {}) as Record<string, unknown>,
+      grep: parsed.meta.grep ?? [],
       isRunnable: isRunnable(parsed),
       parseError: null,
     };
   } catch (err) {
-    return { ...base, content, parsed: null, description: "", model: "(invalid)", args: {}, isRunnable: false, parseError: errMessage(err) };
+    return { ...base, content, parsed: null, description: "", model: "(invalid)", args: {}, grep: [], isRunnable: false, parseError: errMessage(err) };
   }
 }
 

@@ -197,9 +197,13 @@ export function renderReportHtml(
   m: RunManifest,
   pairs: { rec: PairRecord; request: string; response: unknown }[],
 ): string {
-  const scored = scoreFiles(pairs, m.directions ?? {});
+  const directions: Record<string, "low"> = {};
+  for (const a of m.asks) Object.assign(directions, a.directions ?? {});
+  const askNames = m.asks.map((a) => a.ask).join(", ");
+  const models = [...new Set(m.asks.map((a) => a.model))].join(", ");
+  const scored = scoreFiles(pairs, directions);
   const tree = buildTree(scored);
-  const principles = summarizePrinciples(scored, m.directions ?? {});
+  const principles = summarizePrinciples(scored, directions);
 
   const numericTotals = scored.map((s) => s.total).filter((v): v is number => v !== null);
   const overallAvg = numericTotals.length ? numericTotals.reduce((a, b) => a + b, 0) / numericTotals.length : null;
@@ -220,7 +224,7 @@ export function renderReportHtml(
 
   const principleRows = principles
     .map((p) => {
-      const tone = toneOf(p.avg, (m.directions ?? {})[p.q]);
+      const tone = toneOf(p.avg, directions[p.q]);
       const warn = p.badCount > 0 ? `<span class="tag-warn" title="${p.badCount} file(s) flagged bad">⚠ ${p.badCount} bad</span>` : "";
       return `<div class="pq">
         <span class="qn" title="${esc(p.q)}">${esc(p.q)}</span>
@@ -236,7 +240,7 @@ export function renderReportHtml(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ask report — ${esc(m.runId.slice(0, 8))} (${esc(m.ask)})</title>
+<title>ask report — ${esc(m.runId.slice(0, 8))} (${esc(askNames)})</title>
 <style>
   :root {
     --bg: #ffffff;
@@ -616,7 +620,7 @@ export function renderReportHtml(
     <h1>
       <span class="app">ask</span>
       <span class="sep">/</span>
-      <span>${esc(m.ask)}</span>
+      <span>${esc(askNames)}</span>
     </h1>
     <span class="grade ${overallTone}" title="Run overall grade">${overallGrade}</span>
   </div>
@@ -625,7 +629,7 @@ export function renderReportHtml(
     <span>·</span>
     <span>${esc(m.timestamp)}</span>
     <span>·</span>
-    <span>model <code>${esc(m.model)}</code></span>
+    <span>model <code>${esc(models)}</code></span>
     <span>·</span>
     <span><b>${m.pairs.length}</b> file(s)</span>
     <span>·</span>

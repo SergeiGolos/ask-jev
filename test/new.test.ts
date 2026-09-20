@@ -66,7 +66,7 @@ test("scaffolded ask round-trips through the real run pipeline", async () => {
   const fetchImpl = (async () =>
     Response.json({ model: "jev-1", answers: { severity: { score: 1 }, flag: { noul: 0.5 } } })) as typeof fetch;
   const result = await runAsk({
-    name: "review",
+    names: ["review"],
     cwd: dir,
     argv: ["review", "-f", "src/a.ts"],
     files: ["src/a.ts"],

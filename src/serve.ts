@@ -4,10 +4,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expandAskNames, resolveConfig } from "./config.ts";
 import { isRecord } from "./guards.ts";
-import { buildMatrixData, buildTreeData, type MatrixQuery } from "./matrix.ts";
+import { buildMatrixData, buildTreeData, githubRepoUrl, type MatrixQuery } from "./matrix.ts";
 import { historyDir as getHistoryDir, loadAllManifests, readPair, type PairRecord, type RunManifest } from "./history.ts";
 import { renderReportHtml } from "./report.ts";
 import { runAsk, type RunResult } from "./run.ts";
+import { startWatcher, type RunningWatcher } from "./watch.ts";
 import { AskExistsError, AskNotFoundError, InvalidAskNameError, openAskStore, type AskDetail } from "./askstore.ts";
 
 const MIME_TYPES: Record<string, string> = {
@@ -29,6 +30,12 @@ export interface ServerOptions {
   fetchImpl?: typeof fetch;
   /** Notified when a dashboard-triggered run completes; `ask serve` prints the result to its terminal. */
   onRun?: (result: RunResult) => void;
+  /** Watch cwd for file changes and run questions whose front-matter grep matches (ask serve --watch). */
+  watch?: boolean;
+  /** Watch-event sink ([watch] lines); silent when omitted. */
+  log?: (line: string) => void;
+  /** Profile .questions home override; tests point it at a tmp dir. */
+  home?: string;
 }
 
 export interface RunningServer {
@@ -234,9 +241,11 @@ export function createServer(options: ServerOptions = {}): http.Server {
           runs: manifests.map((m) => ({
             runId: m.runId,
             timestamp: m.timestamp,
-            ask: m.ask,
-            model: m.model,
+            asks: m.asks.map((a) => a.ask),
+            models: m.asks.map((a) => a.model),
             pairCount: m.pairs.length,
+            sha: m.git?.sha,
+            repo: githubRepoUrl(m.git?.remote),
           })),
         });
         return;
@@ -375,32 +384,22 @@ export function createServer(options: ServerOptions = {}): http.Server {
           return;
         }
         const batch = body.batch === true;
-        const results: RunResult[] = [];
-        for (const askName of expandedAsks) {
-          const result = await runAsk({
-            name: askName,
-            cwd,
-            argv: [askName, ...(batch ? ["--batch"] : []), ...files.flatMap((f) => ["-f", f])],
-            files,
-            tokens: {},
-            batch,
-            key,
-            fetchImpl: options.fetchImpl,
-          });
-          cacheTimestamp = 0; // the next /api/* request re-reads the just-recorded run
-          options.onRun?.(result);
-          results.push(result);
-        }
+        const result = await runAsk({
+          names: expandedAsks,
+          cwd,
+          argv: [...expandedAsks, ...(batch ? ["--batch"] : []), ...files.flatMap((f) => ["-f", f])],
+          files,
+          tokens: {},
+          batch,
+          key,
+          fetchImpl: options.fetchImpl,
+        });
+        cacheTimestamp = 0; // the next /api/* request re-reads the just-recorded run
+        options.onRun?.(result);
         sendJson(res, 200, {
-          runId: results[results.length - 1]!.manifest.runId,
-          model: results[results.length - 1]!.model,
-          pairs: results.flatMap((r) => r.pairs.map((p) => ({ file: p.file, answers: p.response.answers }))),
-          runs: results.map((r) => ({
-            runId: r.manifest.runId,
-            ask: r.manifest.ask,
-            model: r.model,
-            pairs: r.pairs.map((p) => ({ file: p.file, answers: p.response.answers })),
-          })),
+          runId: result.manifest.runId,
+          asks: result.manifest.asks.map((a) => ({ ask: a.ask, model: a.model })),
+          pairs: result.pairs.map((p) => ({ ask: p.ask, file: p.file, answers: p.response.answers })),
         });
         return;
       }
@@ -477,16 +476,24 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
       const addr = server.address();
       const actualPort = typeof addr === "object" && addr ? addr.port : port;
       const url = `http://${host === "127.0.0.1" ? "localhost" : host}:${actualPort}`;
-      resolve({
-        server,
-        port: actualPort,
-        url,
-        close: () => {
-          const closeResolvers = Promise.withResolvers<void>();
-          server.close((err) => (err ? closeResolvers.reject(err) : closeResolvers.resolve()));
-          return closeResolvers.promise;
-        },
-      });
+      const watcherReady: Promise<RunningWatcher | undefined> = options.watch
+        ? startWatcher({ cwd, home: options.home, fetchImpl: options.fetchImpl, log: options.log, onRun: options.onRun })
+        : Promise.resolve(undefined);
+      watcherReady.then(
+        (watcher) =>
+          resolve({
+            server,
+            port: actualPort,
+            url,
+            close: () => {
+              watcher?.close();
+              const closeResolvers = Promise.withResolvers<void>();
+              server.close((err) => (err ? closeResolvers.reject(err) : closeResolvers.resolve()));
+              return closeResolvers.promise;
+            },
+          }),
+        reject,
+      );
     });
   }
 

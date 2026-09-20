@@ -71,11 +71,14 @@ ask <question-name>... -f <path|glob>... [-t name=value]... [--batch] [--verbose
 | `-t name=value` | Overrides or provides a custom token value for `{{name}}`. Can be specified multiple times. Cannot override built-in tokens (`{{file}}`, `{{filename}}`, `{{content}}`). |
 | `--batch` | Runs all matched files through a single judge call instead of sequential per-file calls. |
 | `--verbose` | Emits detailed progress logs and diagnostics during execution. |
-| `--json` | Outputs JSON result payload (`{ runId, pairs: [...] }`) to `stdout` for programmatic scripting. |
+| `--json` | Outputs JSON result payload (`{ runId, asks: [{ask, model}], pairs: [{ask, file, answers}] }`) to `stdout` for programmatic scripting. |
 | `--html` | Automatically writes a standalone interactive HTML report to `.questions/history/<runId>/report.html`. |
 
 #### Run output
 The default per-file table appends a diff against each file's previous run of the same ask: `(+1)` / `(-2)` / `(=)` for numeric scores and choices, `(was: <previous>)` for relabeled choices. Files never evaluated before print no diff.
+
+#### Grouped runs
+One invocation records **one run** containing every question × every file — `ask q1 q2 -f src/*.ts` produces a single `run.json` listing both asks, with one pair per ask/file combination. When a run covers more than one ask, schema question ids are prefixed `<ask>/` (e.g. `q1/severity`), so asks sharing question names never collide in reports, the trend matrix, or answer diffs. Existing single-ask history keeps its unprefixed ids and stays readable.
 
 #### Globbing & File Resolution Rules
 - Glob patterns are expanded, deduplicated, and sorted within each pattern.
@@ -147,17 +150,18 @@ ask report [run-id] [-o file]
 
 ---
 
-### 8. `ask serve [path] [--port <n>]`
+### 8. `ask serve [path] [--port <n>] [--watch]`
 
 Starts a local HTTP server hosting the Trend Matrix web dashboard over recorded history.
 
 ```bash
-ask serve [path] [--port 3000]
+ask serve [path] [--port 3000] [--watch]
 ```
 
 #### Options
 - `path`: Project directory containing `.questions/history` (default: current working directory).
 - `--port <n>`: TCP port to bind (default: `3000`). If port is in use, auto-increments to the next open port.
+- `--watch`: Watch the project for file changes. A changed file matching a question's front-matter [`grep`](markdown-format.md) pattern runs every matching question on that file, recorded as ONE run per changed file (one run id groups every triggered question × that file). The trigger map reparses automatically when questions are added, edited, or deleted — no restart needed. Changes under `.git/`, `node_modules/`, and `.questions/` never trigger runs.
 
 #### Web Dashboard Features
 - Interactive file tree navigation.
@@ -171,6 +175,6 @@ ask serve [path] [--port 3000]
 - Direct JSON endpoints:
   - `GET /api/tree?ask=<name>&from=<iso>&to=<iso>`
   - `GET /api/matrix?path=<file-or-dir>&ask=<name>&from=<iso>&to=<iso>`
-  - `GET /api/runs` — chronological run summaries `{runId, timestamp, ask, model, pairCount}`.
+  - `GET /api/runs` — chronological run summaries `{runId, timestamp, asks, models, pairCount}`.
   - `GET /api/runs/<runId>/report` — the run's standalone HTML report.
-  - `POST /api/run` — body `{ask, path}`; judges synchronously and returns `{runId, model, pairs}`.
+  - `POST /api/run` — body `{ask|asks, path|files, batch}`; judges synchronously as one grouped run and returns `{runId, asks, pairs}`.

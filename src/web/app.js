@@ -207,6 +207,25 @@ async function loadMatrix() {
   }
 }
 
+/** Compact run-ask label: one ask links through; many collapse to shared prefix + count badge.
+ *  Individual ask links live in the grid's group subheader rows. */
+function runAsksHtml(asks) {
+  if (asks.length === 1) {
+    const a = asks[0];
+    return `<a href="#/questions/${encodeURIComponent(a)}" title="Open question">${a}</a>`;
+  }
+  const parts = asks.map((a) => a.split("/"));
+  let prefix = "";
+  if (parts.every((p) => p.length > 1)) {
+    const first = parts[0];
+    let i = 0;
+    while (i < first.length - 1 && parts.every((p) => p[i] === first[i])) i++;
+    if (i > 0) prefix = first.slice(0, i).join("/") + "/";
+  }
+  const full = asks.join("\n");
+  return `${prefix ? `<span title="${full}">${prefix}</span> ` : ""}<span class="asks-summary" title="${full}">${asks.length} asks</span>`;
+}
+
 function renderMatrix(data) {
   tooltip.style.display = "none";
   const thead = $("matrixHead");
@@ -232,7 +251,7 @@ function renderMatrix(data) {
       <div class="col-run-head">
         <span class="col-run-time">${formatIsoLocal(r.timestamp)}</span>
         <div class="col-run-meta">
-          <span><a href="#/questions/${encodeURIComponent(r.ask)}" title="Open question">${r.ask}</a></span>
+          <span>${runAsksHtml(r.asks)}</span>
           <span>·</span>
           <span>${
             `<a href="#/runs/${r.runId}" title="Open run report">${r.runId.slice(0, 8)}</a>` +
@@ -250,11 +269,28 @@ function renderMatrix(data) {
     return;
   }
 
-  // Build tbody
+  // Build tbody: rows grouped by ask with a subheader row per group linking back to the question.
+  const groups = new Map();
   for (const q of data.questions) {
+    if (!groups.has(q.ask)) groups.set(q.ask, []);
+    groups.get(q.ask).push(q);
+  }
+
+  for (const [ask, rows] of groups) {
+    const gTr = document.createElement("tr");
+    gTr.className = "group-row";
+    const gTh = document.createElement("th");
+    gTh.colSpan = data.runs.length + 1;
+    gTh.setAttribute("data-askinfo", JSON.stringify({ ask, questions: rows.map((r) => r.id) }));
+    gTh.innerHTML = `📂 <a class="group-link" href="#/questions/${encodeURIComponent(ask)}" title="Open question in editor">${ask}</a><span class="group-count">${rows.length} question${rows.length === 1 ? "" : "s"}</span><span class="group-open">hover for detail · name links to editor ↗</span>`;
+    gTr.appendChild(gTh);
+    tbody.appendChild(gTr);
+
+    for (const q of rows) {
     const row = document.createElement("tr");
     const qTh = document.createElement("th");
-    qTh.textContent = q.id;
+    const leaf = q.id.startsWith(ask + "/") ? q.id.slice(ask.length + 1) : q.id;
+    qTh.textContent = leaf;
     qTh.title = q.id;
     // Series for the hover graph, oldest→newest (chart time axis runs left→right, unlike the table).
     const points = [];
@@ -304,8 +340,8 @@ function renderMatrix(data) {
           question: q.id,
           runId: r.runId,
           timestamp: r.timestamp,
-          ask: r.ask,
-          model: r.model,
+          asks: r.asks,
+          models: r.models,
           value: cell.display,
           delta: cell.delta,
           changed: cell.changed,
@@ -322,6 +358,7 @@ function renderMatrix(data) {
     }
 
     tbody.appendChild(row);
+    }
   }
 }
 
@@ -345,6 +382,21 @@ function sparklineSvg(points) {
 
 // Tooltip handler
 document.addEventListener("mouseover", (e) => {
+  const gTh = e.target.closest("th[data-askinfo]");
+  if (gTh) {
+    try {
+      const info = JSON.parse(gTh.getAttribute("data-askinfo"));
+      tooltip.innerHTML = `
+        <div class="tooltip-title">${info.ask}</div>
+        <div class="tooltip-row"><span class="k">Questions:</span><span class="v">${info.questions.length}</span></div>
+        ${info.questions.map((q) => `<div class="tooltip-row"><span class="k">·</span><span class="v">${q.startsWith(info.ask + "/") ? q.slice(info.ask.length + 1) : q}</span></div>`).join("")}
+        <div class="tooltip-row"><span class="k">Open:</span><span class="v">#/questions/${info.ask} ↗</span></div>
+      `;
+      tooltip.style.display = "block";
+    } catch {}
+    return;
+  }
+
   const qTh = e.target.closest("th[data-graph]");
   if (qTh) {
     try {
@@ -368,7 +420,7 @@ document.addEventListener("mouseover", (e) => {
     const info = JSON.parse(td.getAttribute("data-tooltip"));
     tooltip.innerHTML = `
       <div class="tooltip-title">${info.question}</div>
-      <div class="tooltip-row"><span class="k">Run:</span><span class="v">${info.runId.slice(0, 8)} (${info.ask})</span></div>
+      <div class="tooltip-row"><span class="k">Run:</span><span class="v">${info.runId.slice(0, 8)} (${info.asks.join(", ")})</span></div>
       <div class="tooltip-row"><span class="k">Time:</span><span class="v">${formatIsoLocal(info.timestamp)}</span></div>
       <div class="tooltip-row"><span class="k">Value:</span><span class="v">${info.value}</span></div>
       ${info.prevDisplay ? `<div class="tooltip-row"><span class="k">Previous:</span><span class="v">${info.prevDisplay}</span></div>` : ""}
@@ -389,7 +441,7 @@ document.addEventListener("mousemove", (e) => {
 });
 
 document.addEventListener("mouseout", (e) => {
-  if (!e.relatedTarget || !e.relatedTarget.closest("td[data-tooltip], th[data-graph]")) {
+  if (!e.relatedTarget || !e.relatedTarget.closest("td[data-tooltip], th[data-graph], th[data-askinfo]")) {
     tooltip.style.display = "none";
   }
 });
@@ -677,9 +729,9 @@ $("btnRunModalExecute").onclick = async () => {
     await refreshAll(true);
     const status = $("matrixStatus");
     status.style.display = "block";
-    const runsCount = out.runs?.length || 1;
+    const asksCount = out.asks?.length || 1;
     const pairsCount = out.pairs?.length || 0;
-    status.innerHTML = `Run complete: ${runsCount} ask${runsCount === 1 ? "" : "s"} (${pairsCount} pair${pairsCount === 1 ? "" : "s"}) recorded.`;
+    status.innerHTML = `Run complete: ${asksCount} ask${asksCount === 1 ? "" : "s"} (${pairsCount} pair${pairsCount === 1 ? "" : "s"}) grouped in one run.`;
   } catch (err) {
     $("runModalError").textContent = `Run failed: ${err.message}`;
     btn.disabled = false;
@@ -747,7 +799,7 @@ function switchView(view) {
     $(v.nav).style.display = on ? "" : "none";
     $(v.main).style.display = on ? "" : "none";
   }
-  $("brandSub").textContent = view;
+  $("crumbView").textContent = view;
   if (view === "runs") {
     loadRuns();
   } else if (view === "questions") {
@@ -761,6 +813,17 @@ function switchView(view) {
 $("tabTrends").addEventListener("click", () => navigate("#/trends"));
 $("tabRuns").addEventListener("click", () => navigate("#/runs"));
 $("tabQuestions").addEventListener("click", () => navigate("#/questions"));
+
+/* Theme: manual dark/light override persisted in localStorage; unset follows prefers-color-scheme. */
+const savedTheme = localStorage.getItem("ask-theme");
+if (savedTheme === "dark" || savedTheme === "light") document.documentElement.dataset.theme = savedTheme;
+$("themeBtn").addEventListener("click", () => {
+  const current = document.documentElement.dataset.theme
+    || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const next = current === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem("ask-theme", next);
+});
 
 /* =========================================================================
  * Hash Router: #/trends[/<path>] · #/runs[/<runId>] · #/questions[/<name>]
@@ -777,15 +840,27 @@ function parseRoute() {
   return { view, param: seg.slice(1).join("/") };
 }
 
+/** Reflect the route param in the top-bar breadcrumb (trends path · run id · question name). */
+function setCrumbTarget(text, title = text) {
+  $("crumbTargetWrap").style.display = text ? "" : "none";
+  if (text) {
+    $("crumbTarget").textContent = text;
+    $("crumbTarget").title = title;
+  }
+}
+
 /** Single source of truth: renders whatever the URL describes. */
 function applyRoute() {
   const { view, param } = parseRoute();
   switchView(view);
   if (view === "trends") {
+    setCrumbTarget(param);
     if (param !== currentPath) setTrendsTarget(param);
   } else if (view === "runs") {
+    setCrumbTarget(param ? param.slice(0, 8) : "", param);
     if (param && param !== currentRunId) showRun(param);
   } else if (view === "questions") {
+    setCrumbTarget(param);
     if (param && currentQuestion?.name !== param) selectQuestion(param);
   }
 }
@@ -804,6 +879,8 @@ async function loadRuns() {
     const data = await fetchJson("/api/runs");
     runsList = data.runs || [];
     renderRunsTree($("runsFilter").value);
+    // Deep link may have opened a run before the list arrived; fill its header now.
+    if (currentRunId) fillRunHeader(currentRunId);
   } catch (err) {
     console.error("Failed to load runs:", err);
   }
@@ -816,15 +893,18 @@ function renderRunsTree(filter = "") {
 
   const filt = filter.trim().toLowerCase();
   const groups = new Map();
-  for (const r of [...runsList].reverse()) {
+  for (const r of runsList) {
     if (
       filt &&
-      !(r.ask.toLowerCase().includes(filt) || r.runId.toLowerCase().includes(filt) || r.timestamp.toLowerCase().includes(filt))
+      !(r.asks.some((a) => a.toLowerCase().includes(filt)) || r.runId.toLowerCase().includes(filt) || r.timestamp.toLowerCase().includes(filt))
     ) {
       continue;
     }
-    if (!groups.has(r.ask)) groups.set(r.ask, []);
-    groups.get(r.ask).push(r);
+    // A multi-ask run appears under every ask it executed.
+    for (const ask of r.asks) {
+      if (!groups.has(ask)) groups.set(ask, []);
+      groups.get(ask).push(r);
+    }
   }
 
   if (groups.size === 0) {
@@ -858,7 +938,7 @@ function renderRunsTree(filter = "") {
       const item = document.createElement("div");
       item.className = `tree-item ${r.runId === currentRunId ? "active" : ""}`;
       item.dataset.runId = r.runId;
-      item.title = `${r.runId}\nmodel: ${r.model}`;
+      item.title = `${r.runId}\nmodels: ${r.models.join(", ")}`;
       item.innerHTML = `
         <span class="tree-icon">🏃</span>
         <span class="tree-label">${formatIsoLocal(r.timestamp)}</span>
@@ -874,12 +954,39 @@ function renderRunsTree(filter = "") {
   }
 }
 
+/** Pinned header above the report iframe: run id, asks, models, time, pairs, commit link. */
+function fillRunHeader(runId) {
+  const bar = $("runHeaderBar");
+  const r = runsList.find((x) => x.runId === runId);
+  if (!r) {
+    bar.style.display = "none";
+    return;
+  }
+  const models = [...new Set(r.models || [])];
+  bar.innerHTML = `
+    <div class="rb-ids">
+      <span class="runid-chip" title="Full run id: ${r.runId}">${r.runId.slice(0, 8)}</span>
+      <span class="rb-sep">·</span>
+      <span>${runAsksHtml(r.asks)}</span>
+      <span class="rb-sep">·</span>
+      ${models.map((m) => `<span class="model-chip">${m}</span>`).join(" ")}
+      <span class="rb-sep">·</span>
+      <span class="rb-meta">${formatIsoLocal(r.timestamp)}</span>
+      <span class="rb-sep">·</span>
+      <span class="rb-meta">${r.pairCount} pair${r.pairCount === 1 ? "" : "s"}</span>
+    </div>
+    ${r.repo && r.sha ? `<a class="commit-link" href="${r.repo}/commit/${r.sha}" target="_blank" rel="noopener" title="git commit ${r.sha}">commit ${r.sha.slice(0, 7)} ↗</a>` : ""}
+  `;
+  bar.style.display = "flex";
+}
+
 function showRun(runId) {
   currentRunId = runId;
   document.querySelectorAll("#runsContainer .tree-item").forEach((el) => {
     el.classList.toggle("active", el.dataset.runId === runId);
   });
   $("runEmptyState").style.display = "none";
+  fillRunHeader(runId);
   const frame = $("runReportFrame");
   frame.style.display = "";
   frame.src = `/api/runs/${encodeURIComponent(runId)}/report`;
@@ -975,6 +1082,7 @@ function renderQuestionsTree(filter = "") {
       item.innerHTML = `
         <span class="status-dot ${q.isRunnable ? "ok" : "warn"}" title="${q.isRunnable ? "Runnable" : "Missing schema"}"></span>
         <span class="tree-label" title="${q.name} - ${q.description || "No description"}">${shortName}</span>
+        ${q.isRunnable ? "" : '<span class="warn-chip">⚠ no schema</span>'}
       `;
       item.onclick = () => routeToQuestion(q.name);
       frag.appendChild(item);

@@ -45,6 +45,13 @@ test("readAskMeta names the source file in errors", () => {
   assert.throws(() => readAskMeta({ model: 7 }, "/tmp/x.md"), /\/tmp\/x\.md/);
 });
 
+test("readAskMeta reads grep as string or list and rejects non-strings", () => {
+  assert.deepEqual(readAskMeta({ grep: "\\.ts$" }), { grep: ["\\.ts$"] });
+  assert.deepEqual(readAskMeta({ grep: ["\\.ts$", "src/"] }), { grep: ["\\.ts$", "src/"] });
+  assert.throws(() => readAskMeta({ grep: 7 }), /'grep' must be a string or a list of strings/);
+  assert.throws(() => readAskMeta({ grep: ["ok", 7] }), /'grep' must be a string or a list of strings/);
+});
+
 test("temp dir helper sanity", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "aj-"));
   await mkdir(path.join(dir, ".questions"), { recursive: true });

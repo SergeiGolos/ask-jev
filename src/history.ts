@@ -13,6 +13,8 @@ export interface JudgeNote {
 
 export interface PairRecord {
   n: number;
+  /** The ask that judged this pair. */
+  ask: string;
   file: string;
   /** File names inside the run directory. */
   request: string;
@@ -21,19 +23,25 @@ export interface PairRecord {
   notes?: { tools?: { command: string }[]; judge?: JudgeNote };
 }
 
-export interface RunManifest {
-  runId: string;
-  timestamp: string;
+/** One ask executed within a run. */
+export interface RunAsk {
   ask: string;
   askSource: string;
   model: string;
+  /** Questions authored with `direction: low` (lower is better); absent = all default high. */
+  directions?: Record<string, "low">;
+}
+
+export interface RunManifest {
+  runId: string;
+  timestamp: string;
+  /** The asks executed in this run, in invocation order; one run records every ask × every file. */
+  asks: RunAsk[];
   files: string[];
   argv: string[];
   pairs: PairRecord[];
   /** Git commit the analyzed code was at when the run executed; absent outside a repo. */
   git?: GitStamp;
-  /** Questions authored with `direction: low` (lower is better); absent = all default high. */
-  directions?: Record<string, "low">;
 }
 
 export interface GitStamp {
@@ -44,6 +52,7 @@ export interface GitStamp {
 }
 
 export interface PairInput {
+  ask: string;
   file: string;
   /** Rendered prompt for this pair. */
   request: string;
@@ -51,16 +60,21 @@ export interface PairInput {
   notes?: PairRecord["notes"];
 }
 
-export interface RunInput {
+/** One ask within a run, including the schema used to render and append to its pairs. */
+export interface RunAskInput {
   ask: string;
   askSource: string;
   model: string;
+  /** Schema with question ids already prefixed for the run (when the run covers several asks). */
+  schema: Questions | null;
+  directions?: RunAsk["directions"];
+}
+
+export interface RunInput {
+  asks: RunAskInput[];
   files: string[];
   argv: string[];
   pairs: PairInput[];
-  schema: Questions | null;
-  /** Questions authored with `direction: low`; derived from schema by the caller. */
-  directions?: RunManifest["directions"];
   git?: GitStamp;
   /** Test seams. */
   now?: number;
@@ -85,31 +99,34 @@ function withSchema(request: string, schema: Questions | null): string {
   return `${request.replace(/\n$/, "")}\n\n---\n\n<!-- ask schema (reference only) -->\n\`\`\`schema\n${stringifyYaml(schema)}\`\`\`\n`;
 }
 
-/** Write one run directory: run.json + one request/response pair per judged file. */
+/** Write one run directory: run.json + one request/response pair per judged file across all asks. */
 export async function recordRun(cwd: string, input: RunInput): Promise<RunManifest> {
   const runId = input.runId ?? uuidv7(input.now);
   const timestamp = new Date(input.now ?? Date.now()).toISOString();
   const dir = path.join(historyDir(cwd), runId);
   await mkdir(dir, { recursive: true });
+  const schemaByAsk = new Map(input.asks.map((a) => [a.ask, a.schema]));
   const pairs: PairRecord[] = [];
   for (let i = 0; i < input.pairs.length; i++) {
     const p = input.pairs[i]!;
-    const base = `${String(i + 1).padStart(3, "0")}-${slug(p.file)}`;
-    await writeFile(path.join(dir, `${base}.request.md`), withSchema(p.request, input.schema));
+    const base = `${String(i + 1).padStart(3, "0")}-${slug(p.ask)}-${slug(p.file)}`;
+    await writeFile(path.join(dir, `${base}.request.md`), withSchema(p.request, schemaByAsk.get(p.ask) ?? null));
     await writeFile(path.join(dir, `${base}.response.json`), JSON.stringify(p.response, null, 2) + "\n");
-    pairs.push({ n: i + 1, file: p.file, request: `${base}.request.md`, response: `${base}.response.json`, notes: p.notes });
+    pairs.push({ n: i + 1, ask: p.ask, file: p.file, request: `${base}.request.md`, response: `${base}.response.json`, notes: p.notes });
   }
   const manifest: RunManifest = {
     runId,
     timestamp,
-    ask: input.ask,
-    askSource: input.askSource,
-    model: input.model,
+    asks: input.asks.map(({ ask, askSource, model, directions }) => ({
+      ask,
+      askSource,
+      model,
+      ...(directions && Object.keys(directions).length > 0 ? { directions } : {}),
+    })),
     files: input.files,
     argv: input.argv,
     pairs,
     git: input.git,
-    ...(input.directions && Object.keys(input.directions).length > 0 ? { directions: input.directions } : {}),
   };
   await writeFile(path.join(dir, "run.json"), JSON.stringify(manifest, null, 2) + "\n");
   return manifest;
@@ -127,7 +144,14 @@ async function readManifest(dir: string): Promise<RunManifest | undefined> {
   if (!isRecord(raw) || typeof raw.runId !== "string" || !Array.isArray(raw.pairs)) {
     return undefined;
   }
-  return raw as unknown as RunManifest;
+  const m = raw as unknown as RunManifest;
+  if (!Array.isArray(m.asks)) {
+    // Legacy single-ask manifest: fold run-level fields into one RunAsk and tag its pairs.
+    const legacy = raw as unknown as RunManifest & Pick<RunAsk, "ask" | "askSource" | "model"> & { directions?: RunAsk["directions"] };
+    m.asks = [{ ask: legacy.ask ?? "?", askSource: legacy.askSource ?? "", model: legacy.model ?? "?", ...(legacy.directions ? { directions: legacy.directions } : {}) }];
+    for (const p of m.pairs) p.ask ??= m.asks[0]!.ask;
+  }
+  return m;
 }
 
 /** All manifests in chronological order. Accepts either project cwd or history directory. */
@@ -146,8 +170,8 @@ export async function loadAllManifests(dirOrCwd: string): Promise<RunManifest[]>
 export interface RunSummary {
   runId: string;
   timestamp: string;
-  ask: string;
-  model: string;
+  asks: string[];
+  models: string[];
   pairCount: number;
   dir: string;
 }
@@ -165,7 +189,7 @@ export async function listRuns(cwd: string): Promise<RunSummary[]> {
   for (const e of entries) {
     const dir = path.join(root, e);
     const m = await readManifest(dir);
-    if (m) runs.push({ runId: m.runId, timestamp: m.timestamp, ask: m.ask, model: m.model, pairCount: m.pairs.length, dir });
+    if (m) runs.push({ runId: m.runId, timestamp: m.timestamp, asks: m.asks.map((a) => a.ask), models: m.asks.map((a) => a.model), pairCount: m.pairs.length, dir });
   }
   return runs.sort((a, b) => (a.runId < b.runId ? -1 : 1));
 }
@@ -223,10 +247,13 @@ export async function findPreviousRunForFile(
   const sorted = [...manifests].sort((a, b) => b.runId.localeCompare(a.runId));
 
   for (const m of sorted) {
-    if (options.ask && m.ask !== options.ask) continue;
     if (options.beforeRunId && m.runId >= options.beforeRunId) continue;
 
-    const pair = m.pairs.find((p) => path.normalize(p.file) === targetPath || p.file === file);
+    const pair = m.pairs.find(
+      (p) =>
+        (!options.ask || p.ask === options.ask) &&
+        (path.normalize(p.file) === targetPath || p.file === file),
+    );
     if (pair) {
       const dir = path.join(historyDir(cwd), m.runId);
       return { manifest: m, pair, dir };

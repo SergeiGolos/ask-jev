@@ -7,3 +7,4 @@ node_modules/
 .ask/history/
 *.html
 !src/web/index.html
+.obsidian/workspace.json

@@ -1,6 +1,7 @@
 ---
 description: "Boy Scout Rule check: visible neglect left in one file (markers, dead code, debris)"
 model: jev-latest
+grep: src/**/*.ts
 schema:
     rework:
       type: noul

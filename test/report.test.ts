@@ -11,13 +11,10 @@ test("renderReportHtml: direction low flips tone; confidence renders as trust me
   const manifest = {
     runId: uuidv7(0),
     timestamp: "2026-01-01T00:00:00.000Z",
-    ask: "review",
-    askSource: "folder",
-    model: "jev-latest",
+    asks: [{ ask: "review", askSource: "folder", model: "jev-latest", directions: { severity: "low" as const } }],
     files: ["src/a.ts"],
     argv: ["review"],
-    pairs: [{ n: 1, file: "src/a.ts", request: "001-src-a-ts.request.md", response: "001-src-a-ts.response.json" }],
-    directions: { severity: "low" as const },
+    pairs: [{ n: 1, ask: "review", file: "src/a.ts", request: "001-src-a-ts.request.md", response: "001-src-a-ts.response.json" }],
   };
   const html = renderReportHtml(manifest, [
     {
@@ -35,15 +32,20 @@ test("renderReportHtml: direction low flips tone; confidence renders as trust me
 
 function seedInput(now: number): RunInput {
   return {
-    ask: "review",
-    askSource: "folder",
-    model: "jev-latest",
+    asks: [
+      {
+        ask: "review",
+        askSource: "folder",
+        model: "jev-latest",
+        schema: { severity: { type: "score", instructions: "i", criteria: ["low", "high"] } },
+      },
+    ],
     files: ["src/a.ts"],
     argv: ["review", "-f", "src/a.ts"],
-    schema: { severity: { type: "score", instructions: "i", criteria: ["low", "high"] } },
     now,
     pairs: [
       {
+        ask: "review",
         file: "src/a.ts",
         request: "Review src/a.ts\n<script>alert('xss')</script>",
         response: { answers: { severity: { type: "score", score: 2.4 }, flag: { type: "noul", noul: 0.9 } } },
@@ -57,12 +59,10 @@ test("renderReportHtml: three levels, escaping, verbose records, file tree", () 
   const manifest = {
     runId: uuidv7(0),
     timestamp: "2026-01-01T00:00:00.000Z",
-    ask: "review",
-    askSource: "folder",
-    model: "jev-latest",
+    asks: [{ ask: "review", askSource: "folder", model: "jev-latest" }],
     files: ["src/a.ts"],
     argv: ["review"],
-    pairs: [{ n: 1, file: "src/a.ts", request: "001-src-a-ts.request.md", response: "001-src-a-ts.response.json", notes: { tools: [{ command: "wc -l src/a.ts" }] } }],
+    pairs: [{ n: 1, ask: "review", file: "src/a.ts", request: "001-src-a-ts.request.md", response: "001-src-a-ts.response.json", notes: { tools: [{ command: "wc -l src/a.ts" }] } }],
   };
   const html = renderReportHtml(manifest, [
     {

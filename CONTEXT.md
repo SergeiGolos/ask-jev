@@ -33,13 +33,16 @@ The YAML questions definition after the last `---` separator; tells the judge ho
 One ask run covering all `-f` inputs in a single judge call, instead of one call per file.
 
 ## Run
-One CLI invocation over its inputs, recorded as a directory under the project's `.questions/history/` named by its run ID.
+One CLI invocation over its inputs — every question × every file — recorded as ONE directory under the project's `.questions/history/` named by its run ID. The manifest lists all executed asks; each pair records which ask judged it.
 
 ## Run ID
 A UUIDv7 generated per run; sorts by creation time.
 
 ## Pair
 The request/response record for one judged file within a run: the rendered request markdown (schema section included) plus the full JSON response.
+
+## Prefixed question id
+When a run covers more than one ask, schema question ids are recorded as `<ask>/<id>` (e.g. `q1/severity`), keeping identical schema names across asks collision-free in answers, directions, reports, and the trend matrix. Single-ask runs keep unprefixed ids.
 
 ## Report
 The HTML view of a run's pairs, each expandable through three view levels: result, extended (composition), verbose (console output).
@@ -52,3 +55,6 @@ The module owning the `.questions` directories: discovery (`list`) and CRUD (`re
 
 ## Trend server
 The local HTTP service (`ask serve`) providing the trend matrix UI and query endpoints over history.
+
+## Trigger
+A grep pattern declared in an ask's front matter. When the trend server runs with `--watch`, a file change whose project-relative path matches a trigger runs every matching ask on that file, grouped as ONE run. The trigger map reparses when questions are added, edited, or deleted.

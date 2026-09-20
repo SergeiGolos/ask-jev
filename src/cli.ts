@@ -38,14 +38,15 @@ function usage(code: number): number {
 Usage:
   ask list                                         list discovered asks with descriptions (folder ./.questions shadows profile ~/.questions)
   ask new <name>                                   scaffold a new ask
-  ask <question-name>... -f <path|glob>...         run asks, one judge call per file
+  ask <question-name>... -f <path|glob>...         run asks; ONE run records every question × every file
         [-t name=value]... [--batch] [--verbose] [--json] [--html]
   ask history [run-id]                             list runs, or one run's pairs
   ask history [run-id] -f <file>                   diff a file's answers vs the prior run
   ask clean [--force]                              delete all recorded runs (.questions/history)
   ask show <run-id> [pair]                         print a pair's request md + response json
   ask report [run-id] [-o file]                    write the HTML report (default: latest run)
-  ask serve [path] [--port 3000]                   serve trend matrix web dashboard over history
+  ask serve [path] [--port 3000] [--watch]         serve trend matrix web dashboard over history
+                                                 (--watch runs grep-triggered questions on file changes)
 `);
   return code;
 }
@@ -180,12 +181,12 @@ async function cmdHistory(rest: string[]): Promise<number> {
       Math.max(label.length, ...runs.map((r) => get(r).length));
     const idW = width((r) => r.runId.slice(0, 8), "RUN");
     const whenW = width((r) => r.timestamp.replace("T", " ").slice(0, 19), "WHEN");
-    const askW = width((r) => r.ask, "ASK");
+    const askW = width((r) => r.asks.join(", "), "ASK");
     const pad = (s: string, w: number) => s + " ".repeat(w - s.length);
     console.log(`${pad("RUN", idW)}  ${pad("WHEN", whenW)}  ${pad("ASK", askW)}  PAIRS`);
     for (const r of runs)
       console.log(
-        `${pad(r.runId.slice(0, 8), idW)}  ${pad(r.timestamp.replace("T", " ").slice(0, 19), whenW)}  ${pad(r.ask, askW)}  ${r.pairCount}`,
+        `${pad(r.runId.slice(0, 8), idW)}  ${pad(r.timestamp.replace("T", " ").slice(0, 19), whenW)}  ${pad(r.asks.join(", "), askW)}  ${r.pairCount}`,
       );
     return 0;
   }
@@ -193,7 +194,7 @@ async function cmdHistory(rest: string[]): Promise<number> {
   if (prefix !== undefined) {
     const { manifest } = await findRun(process.cwd(), prefix);
     for (const p of manifest.pairs)
-      console.log(`${String(p.n).padStart(3)}  ${p.file}  (${p.request} / ${p.response})`);
+      console.log(`${String(p.n).padStart(3)}  ${p.ask}: ${p.file}  (${p.request} / ${p.response})`);
     return 0;
   }
   return 0;
@@ -208,8 +209,8 @@ async function cmdHistoryDiff(cwd: string, prefix: string | undefined, file: str
   if (!hit) throw new CliError(`no run recorded for '${file}'`);
   const pair = hit.manifest.pairs.find((p) => p.file === file)!;
   const { response } = await readPair(hit.dir, pair);
-  const prev = await getPreviousAnswersForFile(cwd, file, { ask: hit.manifest.ask, beforeRunId: hit.manifest.runId });
-  console.log(`${file}  (run ${hit.manifest.runId.slice(0, 8)}${prev ? ` vs ${prev.runId.slice(0, 8)}` : ", no prior run"})`);
+  const prev = await getPreviousAnswersForFile(cwd, file, { ask: pair.ask, beforeRunId: hit.manifest.runId });
+  console.log(`${pair.ask}: ${file}  (run ${hit.manifest.runId.slice(0, 8)}${prev ? ` vs ${prev.runId.slice(0, 8)}` : ", no prior run"})`);
   console.log(formatPair(file, response, prev?.answers).split("\n").slice(1).join("\n"));
   return 0;
 }
@@ -243,7 +244,7 @@ async function cmdShow(rest: string[]): Promise<number> {
   }
   for (const p of pairs) {
     const { request, response } = await readPair(dir, p);
-    console.log(`=== pair ${p.n}: ${p.file} (${p.request}) ===`);
+    console.log(`=== pair ${p.n}: ${p.ask}: ${p.file} (${p.request}) ===`);
     console.log(request);
     console.log(`=== response (${p.response}) ===`);
     console.log(JSON.stringify(response, null, 2));
@@ -272,16 +273,24 @@ async function cmdReport(rest: string[]): Promise<number> {
   return 0;
 }
 
+/** One-line run summary: asks · models · run id · pair count. */
+function runSummaryLine(result: RunResult): string {
+  const n = result.pairs.length;
+  const models = [...new Set(result.manifest.asks.map((a) => a.model))].join("/");
+  return `${result.manifest.asks.map((a) => a.ask).join(" + ")} · ${models} · run ${result.manifest.runId.slice(0, 8)} · ${n} pair${n === 1 ? "" : "s"}`;
+}
+
 /** Grouped run-results block for the terminal: summary header + aligned question table. Shared by CLI runs and dashboard-triggered runs. */
 export async function printRunResult(cwd: string, result: RunResult): Promise<void> {
   const color = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+  const directions: Record<string, "low"> = {};
+  for (const a of result.manifest.asks) Object.assign(directions, a.directions ?? {});
   const rows: RunTablePair[] = [];
   for (const p of result.pairs) {
-    const prev = await getPreviousAnswersForFile(cwd, p.file, { ask: result.manifest.ask, beforeRunId: result.manifest.runId });
-    rows.push({ file: p.file, response: p.response, previous: prev?.answers, directions: result.manifest.directions });
+    const prev = await getPreviousAnswersForFile(cwd, p.file, { ask: p.ask, beforeRunId: result.manifest.runId });
+    rows.push({ file: p.file, response: p.response, previous: prev?.answers, directions });
   }
-  const n = result.pairs.length;
-  console.log(`${result.manifest.ask} · ${result.model} · run ${result.manifest.runId.slice(0, 8)} · ${n} file${n === 1 ? "" : "s"}`);
+  console.log(runSummaryLine(result));
   const table = runTable(rows, color);
   if (table) console.log(table);
 }
@@ -293,58 +302,44 @@ async function cmdRun(argv: string[], cwd: string = process.cwd(), apiKey?: stri
   if (questions.length === 0) fail("needs at least one question name");
   const key = apiKey ?? process.env.TYPESAFE_API_KEY;
   if (!key) throw new CliError("TYPESAFE_API_KEY is not set — put it in .questions/.env or export it");
-  const results: RunResult[] = [];
-  for (const name of questions) {
-    const result = await runAsk({
-      name,
-      cwd,
-      argv,
-      files: flags.files,
-      tokens: flags.tokens,
-      batch: flags.batch,
-      key,
-      log: flags.verbose ? (line) => console.error(line) : undefined,
-    });
-    results.push(result);
-  }
+  const multiAsk = questions.length > 1;
+  const result = await runAsk({
+    names: questions,
+    cwd,
+    argv,
+    files: flags.files,
+    tokens: flags.tokens,
+    batch: flags.batch,
+    key,
+    log: flags.verbose ? (line) => console.error(line) : undefined,
+    // Stream each file's answers to the console as soon as its judge call completes;
+    // the current run is not recorded yet, so "no beforeRunId" already means "prior runs".
+    onPair: flags.json
+      ? undefined
+      : async (p) => {
+          const prev = await getPreviousAnswersForFile(cwd, p.file, { ask: p.ask });
+          console.log(formatPair(multiAsk ? `${p.ask}: ${p.file}` : p.file, p.response, prev?.answers));
+        },
+  });
   if (flags.json) {
-    if (results.length === 1) {
-      const r = results[0]!;
-      console.log(
-        JSON.stringify(
-          { runId: r.manifest.runId, model: r.model, pairs: r.pairs.map((p) => ({ file: p.file, answers: p.response.answers })) },
-          null,
-          2,
-        ),
-      );
-    } else {
-      console.log(
-        JSON.stringify(
-          results.map((r) => ({
-            runId: r.manifest.runId,
-            ask: r.manifest.ask,
-            model: r.model,
-            pairs: r.pairs.map((p) => ({ file: p.file, answers: p.response.answers })),
-          })),
-          null,
-          2,
-        ),
-      );
-    }
+    console.log(
+      JSON.stringify(
+        {
+          runId: result.manifest.runId,
+          asks: result.manifest.asks.map((a) => ({ ask: a.ask, model: a.model })),
+          pairs: result.pairs.map((p) => ({ ask: p.ask, file: p.file, answers: p.response.answers })),
+        },
+        null,
+        2,
+      ),
+    );
   } else {
-    for (let i = 0; i < results.length; i++) {
-      if (i > 0) console.log();
-      await printRunResult(cwd, results[i]!);
-    }
+    console.log(runSummaryLine(result));
   }
-  if (flags.verbose) {
-    for (const r of results) console.error(`run ${r.manifest.runId} recorded`);
-  }
+  if (flags.verbose) console.error(`run ${result.manifest.runId} recorded`);
   if (flags.html) {
-    for (const r of results) {
-      const report = await writeReport(cwd, r.manifest.runId, getRunReportPath(cwd, r.manifest.runId));
-      if (flags.verbose) console.error(`[report] ${report}`);
-    }
+    const report = await writeReport(cwd, result.manifest.runId, getRunReportPath(cwd, result.manifest.runId));
+    if (flags.verbose) console.error(`[report] ${report}`);
   }
   return 0;
 }
@@ -352,6 +347,7 @@ async function cmdRun(argv: string[], cwd: string = process.cwd(), apiKey?: stri
 export async function cmdServe(rest: string[], cwd: string = process.cwd()): Promise<number> {
   let targetPath = cwd;
   let port: number | undefined = undefined;
+  let watch = false;
 
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]!;
@@ -359,11 +355,14 @@ export async function cmdServe(rest: string[], cwd: string = process.cwd()): Pro
       console.log(`ask serve — serve trend matrix web dashboard over history
 
 Usage:
-  ask serve [path] [--port <n>]
+  ask serve [path] [--port <n>] [--watch]
 
 Options:
   path          project directory containing .questions/history (default: current directory)
   --port <n>    port to listen on (default: 3000, auto-increments if in use)
+  --watch       watch the project for file changes; a change matching a question's
+                front-matter 'grep' pattern runs every matching question on that file
+                (one run id per file)
 `);
       return 0;
     }
@@ -371,6 +370,8 @@ Options:
       const p = rest[++i];
       if (!p || !/^\d+$/.test(p)) throw new CliError("--port requires an integer value");
       port = Number.parseInt(p, 10);
+    } else if (a === "--watch") {
+      watch = true;
     } else if (a.startsWith("-")) {
       throw new CliError(`unknown argument '${a}'`);
     } else {
@@ -393,8 +394,10 @@ Options:
     cwd: targetPath,
     port,
     initialManifests: manifests,
+    watch,
+    log: watch ? (line) => console.log(line) : undefined,
     onRun: (result) => {
-      console.log(`\n[dashboard run] ${result.manifest.ask} on ${result.manifest.files.join(", ") || "batch"}`);
+      console.log(`\n[run] ${result.manifest.asks.map((a) => a.ask).join(", ")} on ${result.manifest.files.join(", ") || "batch"}`);
       void printRunResult(targetPath, result);
     },
   });

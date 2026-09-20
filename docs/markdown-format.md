@@ -58,6 +58,7 @@ args:
 
 - `model` *(optional string)*: Specifies the judge model to invoke (e.g. `jev-latest`, `jev-1`). Defaults to `jev-latest` when omitted.
 - `args` *(optional mapping)*: Key-value map defining default values for custom tokens referenced in the prompt body. These defaults can be overridden at invocation time using `-t key=value`.
+- `grep` *(optional string or list of strings)*: Path patterns that make this ask a watch trigger. When the trend server runs with `ask serve --watch`, a changed file whose project-relative path matches any pattern runs this ask on that file. Patterns are case-insensitive regex with literal-substring fallback for invalid regex — the same convention as the dashboard's matrix grep filter.
 
 ---
 

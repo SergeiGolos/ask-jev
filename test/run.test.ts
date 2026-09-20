@@ -44,7 +44,7 @@ test("runAsk: one judge call per file, files[i]↔pairs[i], per-file state, reco
   const cwd = await fixture();
   const states: unknown[] = [];
   const result = await runAsk({
-    name: "review",
+    names: ["review"],
     cwd,
     argv: ["review", "-f", "src/*.ts"],
     files: ["src/*.ts"],
@@ -58,12 +58,12 @@ test("runAsk: one judge call per file, files[i]↔pairs[i], per-file state, reco
   assert.deepEqual(states[0], { prompt: result.pairs[0]!.request, path: "src/a.ts", language: "TypeScript" });
   assert.deepEqual(states[1], { prompt: result.pairs[1]!.request, path: "src/b.ts", language: "TypeScript" });
   assert.equal(typeof result.pairs[0]!.notes!.judge!.latencyMs, "number");
-  assert.equal(result.model, "test-model"); // front matter wins over default
+  assert.equal(result.manifest.asks[0]!.model, "test-model"); // front matter wins over default
 
   const runJson = JSON.parse(
     await readFile(path.join(cwd, ".questions", "history", result.manifest.runId, "run.json"), "utf8"),
   );
-  assert.equal(runJson.model, "test-model");
+  assert.equal(runJson.asks[0]!.model, "test-model");
   assert.deepEqual(runJson.argv, ["review", "-f", "src/*.ts"]);
   assert.equal(runJson.pairs[1]!.file, "src/b.ts");
 });
@@ -76,7 +76,7 @@ test("runAsk batch: single call, file 'batch', prompt-only state", async () => {
   );
   const states: unknown[] = [];
   const result = await runAsk({
-    name: "review",
+    names: ["review"],
     cwd,
     argv: ["review", "--batch", "-f", "src/*.ts"],
     files: ["src/*.ts"],
@@ -92,14 +92,14 @@ test("runAsk batch: single call, file 'batch', prompt-only state", async () => {
 
 test("runAsk: unknown ask is a plain error; schema-less ask is a CliError", async () => {
   const cwd = await fixture();
-  const noAsk = await runAsk({ name: "nope", cwd, argv: [], files: [], tokens: {}, key: "k" }).catch((e: unknown) => e);
+  const noAsk = await runAsk({ names: ["nope"], cwd, argv: [], files: [], tokens: {}, key: "k" }).catch((e: unknown) => e);
   assert.ok(noAsk instanceof Error);
   assert.ok(!(noAsk instanceof CliError));
   assert.match(noAsk.message, /no ask 'nope'/);
 
   await writeFile(path.join(cwd, ".questions", "bare.md"), "---\nmodel: m\n---\nbody only, no schema\n");
   await assert.rejects(
-    runAsk({ name: "bare", cwd, argv: [], files: [], tokens: {}, key: "k" }),
+    runAsk({ names: ["bare"], cwd, argv: [], files: [], tokens: {}, key: "k" }),
     (e: unknown) => e instanceof CliError && /no questions schema/.test(e.message),
   );
 });
@@ -117,7 +117,7 @@ test("runAsk with URL input: judged like a file and recorded under the URL", asy
   try {
     const states: unknown[] = [];
     const result = await runAsk({
-      name: "review",
+      names: ["review"],
       cwd,
       argv: ["review", "-f", url],
       files: [url],
@@ -150,7 +150,7 @@ test("runAsk stamps run.json with the analyzed tree's git HEAD sha", async () =>
   await git("git", ["init", "-q"], { cwd });
   await git("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-qm", "init"], { cwd });
   const result = await runAsk({
-    name: "review",
+    names: ["review"],
     cwd,
     argv: ["review", "-f", "src/a.ts"],
     files: ["src/a.ts"],
@@ -172,7 +172,7 @@ test("runAsk records low-direction questions in run.json", async () => {
     ASK.replace("  criteria: [low, high]", "  criteria: [low, high]\n  direction: low"),
   );
   const result = await runAsk({
-    name: "review",
+    names: ["review"],
     cwd,
     argv: ["review", "-f", "src/a.ts"],
     files: ["src/a.ts"],
@@ -180,12 +180,12 @@ test("runAsk records low-direction questions in run.json", async () => {
     key: "k",
     fetchImpl: judgeStub(),
   });
-  assert.deepEqual(result.manifest.directions, { severity: "low" });
+  assert.deepEqual(result.manifest.asks[0]!.directions, { severity: "low" });
 
   // ask without direction → field omitted entirely
   const plain = await fixture();
   const bare = await runAsk({
-    name: "review",
+    names: ["review"],
     cwd: plain,
     argv: ["review", "-f", "src/a.ts"],
     files: ["src/a.ts"],
@@ -193,5 +193,50 @@ test("runAsk records low-direction questions in run.json", async () => {
     key: "k",
     fetchImpl: judgeStub(),
   });
-  assert.equal(bare.manifest.directions, undefined);
+  assert.equal(bare.manifest.asks[0]!.directions, undefined);
+});
+
+test("runAsk groups multiple asks into ONE run; overlapping schema ids get ask-prefixed", async () => {
+  const cwd = await fixture();
+  // q2 shares the same question id 'severity' with q1 — would collide without prefixing
+  await writeFile(path.join(cwd, ".questions", "q2.md"), ASK);
+  const judgeBodies: { questions: unknown; state: unknown }[] = [];
+  // Real judge echoes the question ids from the request; mimic that so answers carry the prefix.
+  const fetchImpl = (async (_url: unknown, init?: { body?: string }) => {
+    const body = JSON.parse(init?.body ?? "{}");
+    judgeBodies.push({ questions: body.questions, state: body.state });
+    const answers = Object.fromEntries(Object.keys(body.questions ?? {}).map((k) => [k, { score: 1 }]));
+    return Response.json({ model: "jev-1", answers });
+  }) as typeof fetch;
+
+  const result = await runAsk({
+    names: ["review", "q2"],
+    cwd,
+    argv: ["review", "q2", "-f", "src/a.ts"],
+    files: ["src/a.ts"],
+    tokens: {},
+    key: "k",
+    fetchImpl,
+  });
+
+  // ONE run directory covering both asks × the file
+  assert.equal(result.pairs.length, 2);
+  assert.deepEqual(result.pairs.map((p) => p.ask), ["review", "q2"]);
+  assert.deepEqual(result.pairs.map((p) => p.file), ["src/a.ts", "src/a.ts"]);
+
+  // The judge saw ask-prefixed question ids, so answers cannot collide
+  assert.deepEqual(Object.keys(judgeBodies[0]!.questions as object), ["review/severity"]);
+  assert.deepEqual(Object.keys(judgeBodies[1]!.questions as object), ["q2/severity"]);
+  assert.deepEqual(result.pairs[0]!.response.answers, { "review/severity": { score: 1 } });
+  assert.deepEqual(result.pairs[1]!.response.answers, { "q2/severity": { score: 1 } });
+
+  // Manifest: one run, two asks, per-ask pair records
+  assert.equal(result.manifest.asks.length, 2);
+  assert.deepEqual(result.manifest.asks.map((a) => a.ask), ["review", "q2"]);
+  assert.deepEqual(result.manifest.pairs.map((p) => p.n), [1, 2]);
+  const runJson = JSON.parse(
+    await readFile(path.join(cwd, ".questions", "history", result.manifest.runId, "run.json"), "utf8"),
+  );
+  assert.equal(runJson.asks.length, 2);
+  assert.equal(runJson.pairs[1]!.ask, "q2");
 });
