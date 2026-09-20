@@ -17,7 +17,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsc --noEmit && node --test test/",
+    "test": "tsc --noEmit && node --test test/*.test.ts",
     "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -r src/web dist/web && chmod +x dist/cli.js",
     "prepack": "npm run build && npm run test",
     "build:pack": "npm pack"
