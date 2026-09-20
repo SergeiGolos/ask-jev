@@ -1,0 +1,84 @@
+name: Release Process
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release-process:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Calculate next semantic version
+        id: semver
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+        run: |
+          # Fetch latest release tag, defaulting to v0.1.0 if none exists
+          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n1)
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG="v0.1.0"
+          fi
+          echo "Latest tag found: $LATEST_TAG"
+
+          # Strip leading 'v'
+          VERSION="${LATEST_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          MAJOR=${MAJOR:-0}
+          MINOR=${MINOR:-1}
+          PATCH=${PATCH:-0}
+
+          # Inspect commit message since last tag for bump directive (default to patch)
+          LAST_COMMIT_MSG=$(git log -1 --pretty=%B)
+          if echo "$LAST_COMMIT_MSG" | grep -iqE '(BREAKING CHANGE|#major)'; then
+            NEXT_VERSION="$((MAJOR + 1)).0.0"
+          elif echo "$LAST_COMMIT_MSG" | grep -iqE '^(feat|#minor)'; then
+            NEXT_VERSION="${MAJOR}.$((MINOR + 1)).0"
+          else
+            NEXT_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+          fi
+
+          echo "Next calculated version: v$NEXT_VERSION"
+          echo "version=$NEXT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$NEXT_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build package artifact
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+        run: |
+          VERSION="${{ steps.semver.outputs.version }}"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          npm run build:pack
+          cp ask-jev-*.tgz ask-jev-latest.tgz
+
+      - name: Tag and Publish GitHub Release
+        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.semver.outputs.tag }}
+          name: ${{ steps.semver.outputs.tag }}
+          files: |
+            ask-jev-*.tgz
+            ask-jev-latest.tgz
+          generate_release_notes: true

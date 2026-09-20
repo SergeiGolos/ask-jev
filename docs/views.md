@@ -11,6 +11,50 @@ main-content components, and how they compose. Content is annotated:
 Source of truth: `src/web/index.html`, `src/web/app.js`, `src/web/style.css`, served by
 `src/serve.ts`. No framework, no build step — one ES module plus a static shell today.
 
+## Alignment
+
+Fill in the **Proposed** column to align this document with the intended restructure — empty
+means undecided. **Current** bullets are today's code only (the ➕ fills spec'd in §4 are
+deliberately excluded here). Once filled, the §4 sections update to match; a Proposed entry
+contradicting a ➕ fill wins.
+
+### Header (sticky topbar)
+
+| Route | Current | Proposed |
+|---|---|---|
+| `#/trends[/<path>]` | • crumb `ask ▸ trends ▸ <path>` (target hidden without param)<br>• Trends tab `.active` | |
+| `#/runs[/<path>]` | • today: crumb `ask ▸ runs`, no target unless a runId is in the URL<br>• Runs tab `.active` | |
+| `#/run/<runId>` | • crumb target = runId sliced to 8 chars (full id as title) | |
+| `#/questions` | • crumb `ask ▸ questions`, no target<br>• Questions tab `.active` | |
+| `#/questions/<name>/p/<path>` | • new route; nearest today: `#/questions/<name>` showed crumb target = ask name | |
+| `#/edit/<name>` | • today's `#/questions/<name>`: crumb target = ask name | |
+
+Header-wide, all routes: three tabs (Trends / Runs / Questions) → `#/trends`, `#/runs`,
+`#/questions`; theme toggle in utils; unknown first segment → `runs`.
+
+### Navigation (left sidebar)
+
+| Route | Current | Proposed |
+|---|---|---|
+| `#/trends[/<path>]` | • file tree from `/api/tree`: root "/ (All Files)", directories, files, `runCount` badges<br>• `#treeFilter` client-side hide of non-matching files<br>• click node → `#/trends/<path>` | |
+| `#/runs[/<path>]` | • today: run list grouped by ask from `/api/runs` (newest first; a multi-ask run appears under each ask), `#runsFilter`, group headers link to the ask | |
+| `#/run/<runId>` | • same runs sidebar; `.active` on the selected runId row | |
+| `#/questions` | • today: folder tree built from `/` in ask names, status dots (runnable / ⚠ no schema), `#questionsFilter`, **＋ New** in the sidebar header | |
+| `#/questions/<name>/p/<path>` | • none today | |
+| `#/edit/<name>` | • today (as `#/questions/<name>`): questions tree, `.active` on the current ask; item clicks pass the dirty guard | |
+
+### Content (main area)
+
+| Route                         | Current                                                                                                                                                                                                                                               | Proposed |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `#/trends[/<path>]`           | • control bar: target badge + path, ask/question/date/grep filters, Reset, **▶ Run…** + Batch<br>• matrix: runs (newest left) × questions grouped by ask; tone cells, delta badges, compare links<br>• legend + status line, hover tooltips, 30s poll |          |
+| `#/runs[/<path>]`             | • today: empty state only ("No Run Selected") — the list itself lives in the sidebar                                                                                                                                                                  |          |
+| `#/run/<runId>`               | • run bar: id chip, asks, model chips, timestamp, pair count, commit link<br>• report iframe (`/api/runs/<id>/report`, server-rendered)                                                                                                               |          |
+| `#/questions`                 | • today: empty state "No Question Selected" + **＋ New Question**                                                                                                                                                                                      |          |
+| `#/questions/<name>/p/<path>` | • none today                                                                                                                                                                                                                                          |          |
+| `#/edit/<name>`               | • today (at `#/questions/<name>`): toolbar (badges, category inserters, CRUD actions, Save / Ctrl+S), frontmatter card, CodeMirror editor                                                                                                             |          |
+|                               |                                                                                                                                                                                                                                                       |          |
+
 ## 1. App shell and layout
 
 ```
