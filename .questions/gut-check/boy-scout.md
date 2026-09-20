@@ -1,6 +1,52 @@
 ---
 description: "Boy Scout Rule check: visible neglect left in one file (markers, dead code, debris)"
 model: jev-latest
+schema:
+    rework:
+      type: noul
+      instructions: "Does {{filename}} need rework per the Boy Scout Rule — do unowned TODO/FIXME/HACK markers, commented-out code, debug debris, dead code, or style seams remain in the file?"
+      criteria:
+        true: "Needs rework — visible neglect left in the file"
+        false: "Passes — the file reads finished; everything executes or documents execution"
+    orphan_todo_markers:
+      type: score
+      direction: low
+      instructions: "Unfinished-Work Marker — TODO/FIXME/HACK/XXX comments with no ticket, owner, or date, especially several or stale-looking ones"
+      criteria: &scale
+        - "Absent — no instances in the file"
+        - "Minor — a single dated/ticketed marker (a warning, not a failure)"
+        - "Moderate — repeated instances, or one serious instance"
+        - "Severe — pervasive; the file is defined by it"
+    commented_out_code:
+      type: score
+      direction: low
+      instructions: "Commented-Out Code — comments containing syntactically valid code (statements, function bodies, imports) instead of prose"
+      criteria: *scale
+    dead_code:
+      type: score
+      direction: low
+      instructions: "Dead Code — unreachable branches (if (false), code after return), unused variables/functions/params left in place"
+      criteria: *scale
+    leftover_debug_logging:
+      type: score
+      direction: low
+      instructions: "Debug Debris — console.log/print/dbg!/dd calls, ad-hoc timers or dumps left on active paths"
+      criteria: *scale
+    copy_paste_debris:
+      type: score
+      direction: low
+      instructions: "Duplicated Code — near-identical blocks within the file differing only in a literal or name"
+      criteria: *scale
+    orphaned_imports:
+      type: score
+      direction: low
+      instructions: "Unused Import — requires/imports/usings referring to nothing used in the file"
+      criteria: *scale
+    style_seams:
+      type: score
+      direction: low
+      instructions: "Inconsistent Idiom — mixed indentation, quote style, naming convention, or error-handling pattern within one file, marking where un-scouted patches landed"
+      criteria: *scale
 ---
 Judge `{{filename}}` against the Boy Scout Rule: leave the code better than you
 found it. This is judged from the file's visible hygiene only — evidence of care
@@ -24,51 +70,3 @@ shims.
 The complete file:
 
 {{content}}
-
-```yaml
-rework:
-    type: noul
-    instructions: "Does {{filename}} need rework per the Boy Scout Rule — do unowned TODO/FIXME/HACK markers, commented-out code, debug debris, dead code, or style seams remain in the file?"
-    criteria:
-      true: "Needs rework — visible neglect left in the file"
-      false: "Passes — the file reads finished; everything executes or documents execution"
-  orphan_todo_markers:
-    type: score
-    direction: low
-    instructions: "Unfinished-Work Marker — TODO/FIXME/HACK/XXX comments with no ticket, owner, or date, especially several or stale-looking ones"
-    criteria: &scale
-      - "Absent — no instances in the file"
-      - "Minor — a single dated/ticketed marker (a warning, not a failure)"
-      - "Moderate — repeated instances, or one serious instance"
-      - "Severe — pervasive; the file is defined by it"
-  commented_out_code:
-    type: score
-    direction: low
-    instructions: "Commented-Out Code — comments containing syntactically valid code (statements, function bodies, imports) instead of prose"
-    criteria: *scale
-  dead_code:
-    type: score
-    direction: low
-    instructions: "Dead Code — unreachable branches (if (false), code after return), unused variables/functions/params left in place"
-    criteria: *scale
-  leftover_debug_logging:
-    type: score
-    direction: low
-    instructions: "Debug Debris — console.log/print/dbg!/dd calls, ad-hoc timers or dumps left on active paths"
-    criteria: *scale
-  copy_paste_debris:
-    type: score
-    direction: low
-    instructions: "Duplicated Code — near-identical blocks within the file differing only in a literal or name"
-    criteria: *scale
-  orphaned_imports:
-    type: score
-    direction: low
-    instructions: "Unused Import — requires/imports/usings referring to nothing used in the file"
-    criteria: *scale
-  style_seams:
-    type: score
-    direction: low
-    instructions: "Inconsistent Idiom — mixed indentation, quote style, naming convention, or error-handling pattern within one file, marking where un-scouted patches landed"
-    criteria: *scale
-```
