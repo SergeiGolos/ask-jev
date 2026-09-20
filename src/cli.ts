@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { formatPair } from "./answers.ts";
+import { formatPair, runTable, type RunTablePair } from "./answers.ts";
 import { askDirs, listAsks, resolveConfig } from "./config.ts";
 import { CliError } from "./errors.ts";
 import { cleanRuns, findPreviousRunForFile, findRun, getPreviousAnswersForFile, getRunReportPath, historyDir, listRuns, readPair, type RunManifest } from "./history.ts";
 import { buildTreeData, loadAllManifests } from "./matrix.ts";
 import { BUILTIN } from "./render.ts";
 import { writeReport } from "./report.ts";
-import { runAsk } from "./run.ts";
+import { runAsk, type RunResult } from "./run.ts";
 import { startServer } from "./serve.ts";
 import { newAskTemplate } from "./askfile.ts";
 
@@ -255,6 +255,20 @@ async function cmdReport(rest: string[]): Promise<number> {
   return 0;
 }
 
+/** Grouped run-results block for the terminal: summary header + aligned question table. Shared by CLI runs and dashboard-triggered runs. */
+export async function printRunResult(cwd: string, result: RunResult): Promise<void> {
+  const color = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+  const rows: RunTablePair[] = [];
+  for (const p of result.pairs) {
+    const prev = await getPreviousAnswersForFile(cwd, p.file, { ask: result.manifest.ask, beforeRunId: result.manifest.runId });
+    rows.push({ file: p.file, response: p.response, previous: prev?.answers });
+  }
+  const n = result.pairs.length;
+  console.log(`${result.manifest.ask} · ${result.model} · run ${result.manifest.runId.slice(0, 8)} · ${n} file${n === 1 ? "" : "s"}`);
+  const table = runTable(rows, color);
+  if (table) console.log(table);
+}
+
 async function cmdRun(name: string, rest: string[], cwd: string = process.cwd(), apiKey?: string): Promise<number> {
   const flags = parseRunArgs(rest);
   const key = apiKey ?? process.env.TYPESAFE_API_KEY;
@@ -278,10 +292,7 @@ async function cmdRun(name: string, rest: string[], cwd: string = process.cwd(),
       ),
     );
   } else {
-    for (const p of result.pairs) {
-      const prev = await getPreviousAnswersForFile(cwd, p.file, { ask: name, beforeRunId: result.manifest.runId });
-      console.log(formatPair(p.file, p.response, prev?.answers));
-    }
+    await printRunResult(cwd, result);
   }
   if (flags.verbose) console.error(`run ${result.manifest.runId} recorded`);
   if (flags.html) {
@@ -335,6 +346,10 @@ Options:
     cwd: targetPath,
     port,
     initialManifests: manifests,
+    onRun: (result) => {
+      console.log(`\n[dashboard run] ${result.manifest.ask} on ${result.manifest.files.join(", ") || "batch"}`);
+      void printRunResult(targetPath, result);
+    },
   });
 
   console.log(`Serving trend matrix dashboard:

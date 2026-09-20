@@ -52,9 +52,9 @@ async function post(url: string, body: string): Promise<{ status: number; json: 
   return { status: res.status, json: await res.json() };
 }
 
-async function withServer(cwd: string, fn: (srv: RunningServer, calls: string[]) => Promise<void>): Promise<void> {
+async function withServer(cwd: string, fn: (srv: RunningServer, calls: string[]) => Promise<void>, onRun?: (result: unknown) => void): Promise<void> {
   const calls: string[] = [];
-  const srv = await startServer({ cwd, port: 0, fetchImpl: judgeStub(calls) });
+  const srv = await startServer({ cwd, port: 0, fetchImpl: judgeStub(calls), onRun });
   try {
     await fn(srv, calls);
   } finally {
@@ -120,6 +120,26 @@ test("POST /api/run validates input and errors clearly", async () => {
     assert.equal(noEnv.status, 500); // unknown ask throws inside runAsk; surfaced by the server's error handler
     assert.match(str((noEnv.json as { error: unknown }).error), /no ask 'nope'/);
   });
+});
+
+test("POST /api/run notifies the onRun hook with the finished result", async () => {
+  const cwd = await fixture();
+  const seen: { runId: unknown; files: unknown }[] = [];
+  await withServer(
+    cwd,
+    async (srv) => {
+      const out = await post(srv.url, JSON.stringify({ ask: "review", path: "src/a.ts" }));
+      assert.equal(out.status, 200);
+      assert.equal(seen.length, 1);
+      assert.ok(typeof out.json === "object" && out.json !== null && "runId" in out.json);
+      assert.equal(seen[0]!.runId, out.json.runId); // same run surfaced to the terminal
+      assert.deepEqual(seen[0]!.files, ["src/a.ts"]);
+    },
+    (result) => {
+      const r = result as { manifest: { runId: unknown; files: unknown } };
+      seen.push({ runId: r.manifest.runId, files: r.manifest.files });
+    },
+  );
 });
 
 test("GET /api/run is method-not-allowed", async () => {

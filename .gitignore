@@ -6,3 +6,4 @@ node_modules/
 .questions/history/
 .ask/history/
 *.html
+!src/web/index.html

@@ -86,7 +86,10 @@ export async function listAsks(cwd: string = process.cwd(), home: string = homed
   ] as const) {
     let files: string[];
     try {
-      files = (await readdir(dir)).filter((f) => f.toLowerCase().endsWith(".md"));
+      // ponytail: recursive readdir for organized question subdirectories; skips history/ and dotfiles
+      files = (await readdir(dir, { recursive: true }))
+        .map((f) => f.split(path.sep).join("/"))
+        .filter((f) => f.toLowerCase().endsWith(".md") && !f.startsWith("history/") && !/(^|\/)\.[^/]+/.test(f));
     } catch {
       continue; // no .questions dir at this level
     }

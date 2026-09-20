@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formatPair, parseQuestion } from "../src/answers.ts";
+import { formatPair, parseQuestion, runTable } from "../src/answers.ts";
 
 test("formatPair shapes scores with legend labels, noul and choice", () => {
   const out = formatPair("src/a.ts", {
@@ -31,4 +31,32 @@ test("parseQuestion validates per type and names the id", () => {
   assert.throws(() => parseQuestion("c", { type: "choice", instructions: "i", criteria: "x" }, "t"), /question 'c'/);
   assert.throws(() => parseQuestion("n", { type: "noul", instructions: "i", criteria: { true: 7 } }, "t"), /question 'n'/);
   assert.throws(() => parseQuestion("x", { type: "nope", instructions: "i" }, "t"), /score, choice, or noul/);
+});
+
+test("runTable aligns file rows under per-question columns with deltas", () => {
+  const out = runTable([
+    {
+      file: "src/a.ts",
+      response: { answers: { severity: { score: 3 }, flag: { noul: 0.08 } } },
+      previous: { severity: { score: 1 }, flag: { noul: 0.5 } },
+    },
+    { file: "src/longer-name.ts", response: { answers: { severity: { score: 5 }, extra: { choice: "core" } } } },
+  ]);
+  assert.equal(
+    out,
+    [
+      "FILE                SEVERITY  FLAG             EXTRA",
+      "src/a.ts            3 (+2)    pass 92% (-42%)  —",
+      "src/longer-name.ts  5         —                core",
+    ].join("\n"),
+  );
+});
+
+test("runTable colors cells by tone and omits codes when color is off", () => {
+  const pairs = [{ file: "a.ts", response: { answers: { sev: { score: 8 }, bad: { score: 1 } } } }];
+  const plain = runTable(pairs);
+  assert.ok(!plain.includes("\x1b["));
+  const colored = runTable(pairs, true);
+  assert.ok(colored.includes("\x1b[32m")); // ok tone → green
+  assert.ok(colored.includes("\x1b[31m1\x1b[0m")); // bad tone → red (last column, unpadded)
 });

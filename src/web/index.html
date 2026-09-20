@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/vendor/codemirror.css">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="brand-row">
+          <div class="brand">
+            <span class="brand-title">ask</span>
+            <span class="brand-sub" id="brandSub">trends</span>
+          </div>
+          <div class="view-tabs">
+            <button type="button" class="view-tab active" id="tabTrends" title="View trend matrix">Trends</button>
+            <button type="button" class="view-tab" id="tabQuestions" title="Manage and edit questions">Questions</button>
+          </div>
+        </div>
+
+        <!-- Trends Search -->
+        <div class="sidebar-search" id="trendsSearchWrap">
+          <input type="text" id="treeFilter" placeholder="Filter files..." autocomplete="off">
+        </div>
+
+        <!-- Questions Search & Actions -->
+        <div class="sidebar-search" id="questionsSearchWrap" style="display: none;">
+          <div class="questions-search-row">
+            <input type="text" id="questionsFilter" placeholder="Filter questions..." autocomplete="off">
+            <button type="button" class="btn-sm btn-primary" id="btnNewQuestion" title="New Question">＋ New</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Trends Tree -->
+      <nav class="tree-nav" id="treeContainer">
+        <!-- rendered tree -->
+      </nav>
+
+      <!-- Questions Tree / Organizer -->
+      <nav class="tree-nav" id="questionsContainer" style="display: none;">
+        <!-- rendered questions list / folders -->
+      </nav>
+    </aside>
+
+    <!-- Main Content: Trends View -->
+    <main class="main-content" id="trendsView">
+      <header class="control-bar">
+        <div class="selection-info">
+          <span class="target-badge" id="targetType">directory</span>
+          <h2 class="target-path" id="targetPath" title="All Files">/ (All Files)</h2>
+        </div>
+
+        <div class="filters-row">
+          <div class="filter-group">
+            <label for="askSelect">Ask</label>
+            <select id="askSelect">
+              <option value="">All Asks</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label for="questionSelect">Question</label>
+            <select id="questionSelect">
+              <option value="">All Questions</option>
+            </select>
+          </div>
+
+          <div class="filter-group date-group">
+            <label>Date Range</label>
+            <div class="date-inputs">
+              <input type="datetime-local" id="dateFrom" title="From">
+              <span class="range-sep">→</span>
+              <input type="datetime-local" id="dateTo" title="To">
+            </div>
+          </div>
+
+          <div class="filter-group grep-group">
+            <label for="grepInput">Grep</label>
+            <div class="grep-wrap">
+              <input type="text" id="grepInput" placeholder="Regex or substring..." autocomplete="off">
+              <span class="grep-status" id="grepStatus"></span>
+            </div>
+          </div>
+
+          <button type="button" class="btn-reset" id="btnReset" title="Reset filters">Reset</button>
+
+          <div class="filter-group run-group">
+            <label for="runAskSelect">Run</label>
+            <div class="run-inputs">
+              <select id="runAskSelect" title="Ask to run"></select>
+              <button type="button" class="btn-run" id="btnRun" title="Run the selected ask against the current target">Run</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section class="matrix-wrapper">
+        <div class="matrix-status" id="matrixStatus">Loading history...</div>
+        <div class="table-scroll-container" id="tableContainer">
+          <table class="trend-table" id="matrixTable">
+            <thead id="matrixHead"></thead>
+            <tbody id="matrixBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <!-- Main Content: Questions Editor View -->
+    <main class="main-content" id="questionsView" style="display: none;">
+      <!-- Empty State -->
+      <div class="empty-state" id="questionEmptyState">
+        <div class="empty-icon">📝</div>
+        <h3>No Question Selected</h3>
+        <p>Select a question from the sidebar or create a new one to begin editing.</p>
+        <button type="button" class="btn-sm btn-primary" id="btnEmptyNewQuestion">＋ New Question</button>
+      </div>
+
+      <!-- Active Question Editor -->
+      <div class="question-editor-layout" id="questionEditorSurface" style="display: none;">
+        <!-- Top Toolbar -->
+        <header class="q-toolbar">
+          <div class="q-info-group">
+            <span class="q-icon">📝</span>
+            <span class="q-title" id="qTitle">question</span>
+            <span class="badge" id="qModelBadge">jev-latest</span>
+            <span class="badge" id="qStatusBadge">runnable</span>
+            <span class="q-save-status" id="qSaveStatus">Saved</span>
+          </div>
+
+          <div class="q-actions">
+            <button type="button" class="btn-sm btn-action" id="btnRunQuestion" title="Run this ask">▶ Run</button>
+            <button type="button" class="btn-sm btn-action" id="btnMoveQuestion" title="Rename or move">Rename/Move</button>
+            <button type="button" class="btn-sm btn-action" id="btnDuplicateQuestion" title="Duplicate ask">Duplicate</button>
+            <button type="button" class="btn-sm btn-danger" id="btnDeleteQuestion" title="Delete ask">Delete</button>
+            <button type="button" class="btn-sm btn-primary" id="btnSaveQuestion" title="Save changes (Ctrl+S / Cmd+S)">Save</button>
+          </div>
+        </header>
+
+        <!-- Frontmatter Visual Summary Card -->
+        <section class="frontmatter-card" id="frontmatterCard">
+          <div class="fm-badge-label">YAML Front Matter</div>
+          <div class="fm-details">
+            <div class="fm-row" id="fmDescRow">
+              <span class="fm-label">Description</span>
+              <span class="fm-value" id="fmDesc">—</span>
+            </div>
+            <div class="fm-chips-row">
+              <div class="fm-chip-group">
+                <span class="fm-label">Model:</span>
+                <span class="badge badge-accent" id="fmModelVal">—</span>
+              </div>
+              <div class="fm-chip-group" id="fmArgsGroup">
+                <span class="fm-label">Args:</span>
+                <div class="fm-pills" id="fmArgsPills"></div>
+              </div>
+              <div class="fm-chip-group" id="fmSchemaGroup">
+                <span class="fm-label">Questions:</span>
+                <div class="fm-pills" id="fmSchemaPills"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- CodeMirror Editor Container -->
+        <div class="editor-container" id="editorContainer"></div>
+      </div>
+    </main>
+  </div>
+  <!-- Modal Backdrop & Dialog -->
+  <div class="modal-backdrop" id="modalBackdrop" style="display: none;">
+    <div class="modal-dialog" id="modalDialog">
+      <h3 class="modal-title" id="modalTitle">Modal</h3>
+      <div class="modal-body" id="modalBody">
+        <label for="modalInput" id="modalLabel">Name</label>
+        <input type="text" id="modalInput" autocomplete="off">
+        <div class="modal-error" id="modalError"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-sm" id="btnModalCancel">Cancel</button>
+        <button type="button" class="btn-sm btn-primary" id="btnModalConfirm">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tooltip" id="tooltip"></div>
+</body>
+</html>

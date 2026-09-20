@@ -70,6 +70,13 @@ export function parseQuestion(id: string, q: unknown, source: string): Question 
 }
 export type Tone = "ok" | "warn" | "bad" | "mut";
 
+/** ANSI SGR codes per answer tone; applied only when the caller asks for color. */
+const TONE_SGR: Record<Tone, string> = { ok: "32", warn: "33", bad: "31", mut: "2" };
+
+function paint(text: string, tone: Tone, color: boolean): string {
+  return color ? `\x1b[${TONE_SGR[tone]}m${text}\x1b[0m` : text;
+}
+
 export interface ParsedAnswer {
   q: string;
   numeric: number | null;
@@ -142,6 +149,83 @@ export function parseAnswer(q: string, a: unknown): ParsedAnswer {
   }
 
   throw new Error(`invalid answer for '${q}': missing score, choice, or noul`);
+}
+
+/** One row of a run table: the judged file, its raw response, and optional prior answers for deltas. */
+export interface RunTablePair {
+  file: string;
+  response: unknown;
+  previous?: Record<string, unknown>;
+}
+
+/** Delta suffix for one answer vs its prior run, mirroring formatPair's diff notation. */
+function deltaSuffix(a: Record<string, unknown>, prev: Record<string, unknown> | undefined): string {
+  if (!isRecord(prev)) return "";
+  if (typeof a.score === "number" && typeof prev.score === "number") {
+    const d = Number((a.score - prev.score).toFixed(1));
+    return d > 0 ? ` (+${d})` : d < 0 ? ` (${d})` : "";
+  }
+  if (typeof a.noul === "number" && typeof prev.noul === "number") {
+    const d = Math.round((a.noul - prev.noul) * 100);
+    return d > 0 ? ` (+${d}%)` : d < 0 ? ` (${d}%)` : "";
+  }
+  if (typeof a.choice === "string" && prev.choice !== undefined) {
+    const pc = String(prev.choice);
+    const [cn, pn] = [Number(a.choice), Number(pc)];
+    return pc === a.choice ? " (=)"
+      : !Number.isNaN(cn) && !Number.isNaN(pn) ? ` (${cn - pn > 0 ? "+" : ""}${cn - pn})`
+      : ` (was: ${pc})`;
+  }
+  return "";
+}
+
+/**
+ * Aligned CLI table for a run's results: one row per file, one column per question,
+ * cells tone-colored and suffixed with the delta vs the prior run when provided.
+ */
+export function runTable(pairs: RunTablePair[], color = false): string {
+  const parsed = pairs.map(({ file, response, previous }) => {
+    const cells: { id: string; text: string; tone: Tone }[] = [];
+    if (isRecord(response) && isRecord(response.answers)) {
+      for (const [id, a] of Object.entries(response.answers)) {
+        if (!isRecord(a)) continue;
+        try {
+          const p = parseAnswer(id, a);
+          const prev = isRecord(previous) && isRecord(previous[id]) ? previous[id] : undefined;
+          cells.push({ id, text: p.display + deltaSuffix(a, prev), tone: p.tone });
+        } catch {
+          cells.push({ id, text: JSON.stringify(a), tone: "mut" });
+        }
+      }
+    }
+    return { file, cells };
+  });
+
+  const ids: string[] = [];
+  for (const row of parsed) for (const c of row.cells) if (!ids.includes(c.id)) ids.push(c.id);
+  if (parsed.length === 0 || ids.length === 0) return "";
+
+  const grid = parsed.map((r) =>
+    ids.map((id) => r.cells.find((c) => c.id === id) ?? { text: "—", tone: "mut" as Tone }),
+  );
+  const fileW = Math.max("FILE".length, ...parsed.map((r) => r.file.length));
+  const colW = ids.map((id, j) =>
+    Math.max(id.length, ...grid.map((row) => row[j]!.text.length)),
+  );
+
+  const lines = [
+    "FILE".padEnd(fileW) + "  " + ids.map((id, j) => id.toUpperCase().padEnd(colW[j]!)).join("  ").trimEnd(),
+  ];
+  for (let i = 0; i < parsed.length; i++) {
+    const row = parsed[i]!;
+    let line = row.file.padEnd(fileW) + "  ";
+    grid[i]!.forEach((cell, j) => {
+      const isLast = j === ids.length - 1;
+      line += paint(isLast ? cell.text : cell.text.padEnd(colW[j]!), cell.tone, color) + (isLast ? "" : "  ");
+    });
+    lines.push(line.trimEnd());
+  }
+  return lines.join("\n");
 }
 
 /** Human-readable block for one recorded pair, showing diff if previous answers are provided. */
