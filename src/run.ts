@@ -79,6 +79,11 @@ export async function runAsk(o: RunOptions): Promise<RunResult> {
     onToolStart: o.log ? (cmd) => o.log!(`[tool] $ ${cmd}`) : undefined,
   });
   const model = ask.meta.model ?? "jev-latest";
+  const directions = Object.fromEntries(
+    Object.entries(ask.schema ?? {})
+      .filter(([, q]) => q.direction === "low")
+      .map(([id]) => [id, "low" as const]),
+  );
 
   const pairs: RunResult["pairs"] = [];
   for (let i = 0; i < rendered.length; i++) {
@@ -110,6 +115,7 @@ export async function runAsk(o: RunOptions): Promise<RunResult> {
     argv: o.argv,
     pairs,
     schema: ask.schema,
+    directions: Object.keys(directions).length > 0 ? directions : undefined,
     git: await gitStamp(cwd),
   });
   return { manifest, model, pairs };

@@ -32,6 +32,8 @@ export interface RunManifest {
   pairs: PairRecord[];
   /** Git commit the analyzed code was at when the run executed; absent outside a repo. */
   git?: GitStamp;
+  /** Questions authored with `direction: low` (lower is better); absent = all default high. */
+  directions?: Record<string, "low">;
 }
 
 export interface GitStamp {
@@ -57,6 +59,8 @@ export interface RunInput {
   argv: string[];
   pairs: PairInput[];
   schema: Questions | null;
+  /** Questions authored with `direction: low`; derived from schema by the caller. */
+  directions?: RunManifest["directions"];
   git?: GitStamp;
   /** Test seams. */
   now?: number;
@@ -105,6 +109,7 @@ export async function recordRun(cwd: string, input: RunInput): Promise<RunManife
     argv: input.argv,
     pairs,
     git: input.git,
+    ...(input.directions && Object.keys(input.directions).length > 0 ? { directions: input.directions } : {}),
   };
   await writeFile(path.join(dir, "run.json"), JSON.stringify(manifest, null, 2) + "\n");
   return manifest;

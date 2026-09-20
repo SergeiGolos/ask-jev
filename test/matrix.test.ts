@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { buildTreeData, buildMatrixData, githubRepoUrl, loadAllManifests, parseAnswer } from "../src/matrix.ts";
@@ -126,4 +126,28 @@ test("githubRepoUrl and run-column git stamp passthrough", async () => {
   assert.equal(res.runs[0]!.sha, "c".repeat(40)); // newest run is the first column
   assert.equal(res.runs[0]!.repo, "https://github.com/owner/repo");
   assert.equal(res.runs[1]!.sha, undefined); // unstamped run stays link-less
+});
+
+test("low-direction questions tone inverted in matrix cells and rollups", async () => {
+  const historyDir = await mkdtemp(path.join(tmpdir(), "aj-dir-"));
+  const runId = "d1";
+  await mkdir(path.join(historyDir, runId), { recursive: true });
+  await writeFile(
+    path.join(historyDir, runId, "1.response.json"),
+    JSON.stringify({ answers: { violations: { score: 1 } } }),
+  );
+  const manifest = {
+    runId,
+    timestamp: "2025-01-01T00:00:00.000Z",
+    ask: "a",
+    askSource: "folder",
+    model: "m",
+    files: ["src/a.ts"],
+    argv: [],
+    pairs: [{ n: 1, file: "src/a.ts", request: "1.request.md", response: "1.response.json" }],
+    directions: { violations: "low" as const },
+  };
+  const res = await buildMatrixData(historyDir, [manifest], { path: "src" });
+  assert.equal(res.questions[0]!.id, "violations");
+  assert.equal(res.questions[0]!.cells[runId]!.tone, "ok"); // 1 violation → green, not red
 });

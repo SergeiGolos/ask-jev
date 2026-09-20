@@ -164,3 +164,34 @@ test("runAsk stamps run.json with the analyzed tree's git HEAD sha", async () =>
   );
   assert.equal(runJson.git?.sha, expected);
 });
+
+test("runAsk records low-direction questions in run.json", async () => {
+  const cwd = await fixture();
+  await writeFile(
+    path.join(cwd, ".questions", "review.md"),
+    ASK.replace("  criteria: [low, high]", "  criteria: [low, high]\n  direction: low"),
+  );
+  const result = await runAsk({
+    name: "review",
+    cwd,
+    argv: ["review", "-f", "src/a.ts"],
+    files: ["src/a.ts"],
+    tokens: {},
+    key: "k",
+    fetchImpl: judgeStub(),
+  });
+  assert.deepEqual(result.manifest.directions, { severity: "low" });
+
+  // ask without direction → field omitted entirely
+  const plain = await fixture();
+  const bare = await runAsk({
+    name: "review",
+    cwd: plain,
+    argv: ["review", "-f", "src/a.ts"],
+    files: ["src/a.ts"],
+    tokens: {},
+    key: "k",
+    fetchImpl: judgeStub(),
+  });
+  assert.equal(bare.manifest.directions, undefined);
+});

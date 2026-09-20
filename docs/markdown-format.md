@@ -177,6 +177,19 @@ severity:
 - `type`: Must be `"score"`.
 - `instructions`: Clear instruction for what is being evaluated.
 - `criteria`: An array of at least 2 non-empty string descriptions, ordered from lowest (0) to highest (N-1).
+- `direction` *(optional `"high"` | `"low"`, default `"high"`)*: Which end of the scale is good. With `direction: low`, low scores render green and high scores red — for violation counts or severity-style scales where 0 is healthy:
+
+```yaml
+violations:
+  type: score
+  instructions: "How many rule violations did you find?"
+  direction: low
+  criteria:
+    - "No violations"
+    - "A few minor violations"
+    - "Many violations"
+```
+
 - Result: An ordinal score representing where the evaluated input falls along the scale.
 
 ### B. `choice` Questions
@@ -215,4 +228,5 @@ rework_needed:
 - `type`: Must be `"noul"`.
 - `instructions`: Binary decision instruction.
 - `criteria` *(optional)*: Mapping containing optional `true` and/or `false` rubric descriptions.
+- `direction` *(optional `"high"` | `"low"`, default `"low"`)*: For `noul`, `direction: low` means `true` (p ≥ 0.5) is bad — the default "rework needed" semantics. Set `direction: high` when `true` is the good outcome (e.g. "is this file covered by tests?").
 - Result: Probability between 0.0 and 1.0 (displayed as pass/fail percentage).

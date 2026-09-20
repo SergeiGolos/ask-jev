@@ -7,6 +7,32 @@ import { recordRun, type RunInput } from "../src/history.ts";
 import { renderReportHtml, writeReport } from "../src/report.ts";
 import { uuidv7 } from "../src/uuid7.ts";
 
+test("renderReportHtml: direction low flips tone; confidence renders as trust meter", () => {
+  const manifest = {
+    runId: uuidv7(0),
+    timestamp: "2026-01-01T00:00:00.000Z",
+    ask: "review",
+    askSource: "folder",
+    model: "jev-latest",
+    files: ["src/a.ts"],
+    argv: ["review"],
+    pairs: [{ n: 1, file: "src/a.ts", request: "001-src-a-ts.request.md", response: "001-src-a-ts.response.json" }],
+    directions: { severity: "low" as const },
+  };
+  const html = renderReportHtml(manifest, [
+    {
+      rec: manifest.pairs[0]!,
+      request: "p",
+      response: { answers: { severity: { type: "score", score: 1, confidence: 0.62 } } },
+    },
+  ]);
+  assert.ok(html.includes('class="qv ok">1</b>')); // 1 violation on a low-direction scale → green
+  assert.ok(html.includes('class="qmeter"')); // trust meter replaces bare percent
+  assert.ok(html.includes("width:62%"));
+  assert.ok(html.includes("62%")); // exact value stays visible
+  assert.ok(html.includes('title="Judge confidence: 62%"'));
+});
+
 function seedInput(now: number): RunInput {
   return {
     ask: "review",

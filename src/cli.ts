@@ -12,8 +12,8 @@ import { runAsk, type RunResult } from "./run.ts";
 import { startServer } from "./serve.ts";
 import { newAskTemplate } from "./askfile.ts";
 
-export async function main(argv: string[]): Promise<number> {
-  const config = await resolveConfig();
+export async function main(argv: string[], cwdOverride?: string): Promise<number> {
+  const config = await resolveConfig(cwdOverride);
   for (const [k, v] of Object.entries(config.env))
     if (process.env[k] === undefined) process.env[k] = v;
   const [cmd, ...rest] = argv;
@@ -82,6 +82,7 @@ export interface RunFlags {
 
 export function parseRunArgs(rest: string[]): RunFlags {
   const flags: RunFlags = { questions: [], files: [], tokens: {}, batch: false, verbose: false, json: false, html: false };
+  let inFiles = false;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]!;
     const value = (): string => {
@@ -91,25 +92,34 @@ export function parseRunArgs(rest: string[]): RunFlags {
       return v;
     };
     if (a === "-q" || a === "--question") {
+      inFiles = false;
       const val = value();
       for (const q of val.split(",")) if (q.trim()) flags.questions.push(q.trim());
     } else if (a === "-f") {
+      inFiles = true;
       flags.files.push(value());
     } else if (a === "-t") {
+      inFiles = false;
       const kv = value();
       const eq = kv.indexOf("=");
       if (eq <= 0) fail(`-t expects name=value, got '${kv}'`);
       flags.tokens[kv.slice(0, eq)] = kv.slice(eq + 1);
     } else if (a === "--batch") {
+      inFiles = false;
       flags.batch = true;
     } else if (a === "--verbose") {
+      inFiles = false;
       flags.verbose = true;
     } else if (a === "--json") {
+      inFiles = false;
       flags.json = true;
     } else if (a === "--html") {
+      inFiles = false;
       flags.html = true;
     } else if (a.startsWith("-")) {
       fail(`unknown argument '${a}'`);
+    } else if (inFiles) {
+      flags.files.push(a);
     } else {
       for (const q of a.split(",")) if (q.trim()) flags.questions.push(q.trim());
     }
@@ -274,7 +284,7 @@ export async function printRunResult(cwd: string, result: RunResult): Promise<vo
   const rows: RunTablePair[] = [];
   for (const p of result.pairs) {
     const prev = await getPreviousAnswersForFile(cwd, p.file, { ask: result.manifest.ask, beforeRunId: result.manifest.runId });
-    rows.push({ file: p.file, response: p.response, previous: prev?.answers });
+    rows.push({ file: p.file, response: p.response, previous: prev?.answers, directions: result.manifest.directions });
   }
   const n = result.pairs.length;
   console.log(`${result.manifest.ask} · ${result.model} · run ${result.manifest.runId.slice(0, 8)} · ${n} file${n === 1 ? "" : "s"}`);

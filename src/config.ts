@@ -75,13 +75,19 @@ export async function resolveAsk(
   return undefined;
 }
 
-/** Expand question names: if a name matches a directory containing .md asks, expands to all questions in it. */
+function globToRegex(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  return new RegExp("^" + escaped.replace(/\*/g, ".*").replace(/\?/g, ".") + "$");
+}
+
+/** Expand question names: if a name matches a directory or glob pattern, expands to all matching questions. */
 export async function expandAskNames(
   names: string[],
   cwd: string = process.cwd(),
   home: string = homedir(),
 ): Promise<string[]> {
   const { folder, profile } = askDirs(cwd, home);
+  const allAsks = await listAsks(cwd, home);
   const out: string[] = [];
 
   for (const raw of names) {
@@ -90,6 +96,25 @@ export async function expandAskNames(
       clean = clean.slice(11);
     }
 
+    // 1. Glob matching (* or ?) against discovered ask names
+    if (raw.includes("*") || raw.includes("?")) {
+      const re = globToRegex(clean.replace(/\.md$/i, ""));
+      const matched = allAsks.filter((a) => re.test(a.name));
+      if (matched.length > 0) {
+        for (const m of matched) out.push(m.name);
+        continue;
+      }
+    }
+
+    // 2. Exact directory prefix match against discovered asks (e.g. "gut-feeling" -> "gut-feeling/*")
+    const prefix = clean + "/";
+    const prefixMatched = allAsks.filter((a) => a.name.startsWith(prefix));
+    if (prefixMatched.length > 0) {
+      for (const m of prefixMatched) out.push(m.name);
+      continue;
+    }
+
+    // 3. Filesystem directory candidates (including custom directories outside .questions)
     const candidates = [
       { dir: path.join(folder, clean), root: folder },
       { dir: path.join(profile, clean), root: profile },

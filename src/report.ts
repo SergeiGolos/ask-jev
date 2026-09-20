@@ -24,11 +24,11 @@ interface FileScore {
 const fmt = (v: number): string => (Number.isInteger(v) ? String(v) : v.toFixed(1));
 
 
-function scoreFiles(pairs: { rec: PairRecord; request: string; response: unknown }[]): FileScore[] {
+function scoreFiles(pairs: { rec: PairRecord; request: string; response: unknown }[], directions: Record<string, "low">): FileScore[] {
   const scored = pairs.map((p) => {
     const answers: Answer[] =
       isRecord(p.response) && isRecord(p.response.answers)
-        ? Object.entries(p.response.answers).map(([q, a]) => parseAnswer(q, a))
+        ? Object.entries(p.response.answers).map(([q, a]) => parseAnswer(q, a, directions[q]))
         : [];
     const nums = answers.map((a) => a.v).filter((v): v is number => v !== null);
     const total = nums.length ? nums.reduce((s, v) => s + v, 0) / nums.length : null;
@@ -39,6 +39,7 @@ function scoreFiles(pairs: { rec: PairRecord; request: string; response: unknown
       answers,
       total,
       grade: gradeOf(total),
+      // ponytail: totals average mixed-direction questions raw; normalize to "goodness" per question if totals mislead
       tone: total === null ? ("mut" as const) : toneOf(total),
       rank: 0,
     };
@@ -101,23 +102,23 @@ interface PrincipleSummary {
   q: string;
   avg: number;
   count: number;
-  lowCount: number;
+  badCount: number;
 }
 
-function summarizePrinciples(files: FileScore[]): PrincipleSummary[] {
-  const map = new Map<string, { sum: number; count: number; lowCount: number }>();
+function summarizePrinciples(files: FileScore[], directions: Record<string, "low">): PrincipleSummary[] {
+  const map = new Map<string, { sum: number; count: number; badCount: number }>();
   for (const f of files) {
     for (const a of f.answers) {
       if (a.v === null) continue;
-      const cur = map.get(a.q) ?? { sum: 0, count: 0, lowCount: 0 };
+      const cur = map.get(a.q) ?? { sum: 0, count: 0, badCount: 0 };
       cur.sum += a.v;
       cur.count += 1;
-      if (a.v < 4) cur.lowCount += 1;
+      if (a.tone === "bad") cur.badCount += 1;
       map.set(a.q, cur);
     }
   }
   return [...map.entries()]
-    .map(([q, s]) => ({ q, avg: s.sum / s.count, count: s.count, lowCount: s.lowCount }))
+    .map(([q, s]) => ({ q, avg: s.sum / s.count, count: s.count, badCount: s.badCount }))
     .sort((a, b) => b.avg - a.avg);
 }
 
@@ -139,7 +140,10 @@ function answerRow(a: Answer): string {
     a.v !== null
       ? `<span class="qbar"><i class="${a.tone}" style="width:${Math.max(4, Math.min(100, (a.v / 10) * 100))}%"></i></span>`
       : `<span class="qbar empty"></span>`;
-  const conf = a.conf !== null ? `<span class="qc" title="Judge confidence">${a.conf}%</span>` : `<span class="qc"></span>`;
+  const conf =
+    a.conf !== null
+      ? `<span class="qc"><span class="qmeter" title="Judge confidence: ${a.conf}%"><i class="${confTone(a.conf)}" style="width:${a.conf}%"></i></span><small>${a.conf}%</small></span>`
+      : `<span class="qc"></span>`;
   const heat = a.probs ? heatStrip(a.probs) : "";
   return `<div class="pq" data-q="${esc(a.q)}">
     <span class="qn" title="${esc(a.q)}">${esc(a.q)}</span>
@@ -148,6 +152,11 @@ function answerRow(a: Answer): string {
     ${conf}
     ${heat}
   </div>`;
+}
+
+/** Confidence level as tone: the meter's low→high fill color. */
+function confTone(conf: number): Tone {
+  return conf >= 75 ? "ok" : conf >= 50 ? "warn" : "bad";
 }
 
 function consolePanel(notes: PairRecord["notes"]): string {
@@ -205,9 +214,9 @@ export function renderReportHtml(
   m: RunManifest,
   pairs: { rec: PairRecord; request: string; response: unknown }[],
 ): string {
-  const scored = scoreFiles(pairs);
+  const scored = scoreFiles(pairs, m.directions ?? {});
   const tree = buildTree(scored);
-  const principles = summarizePrinciples(scored);
+  const principles = summarizePrinciples(scored, m.directions ?? {});
 
   const numericTotals = scored.map((s) => s.total).filter((v): v is number => v !== null);
   const overallAvg = numericTotals.length ? numericTotals.reduce((a, b) => a + b, 0) / numericTotals.length : null;
@@ -228,8 +237,8 @@ export function renderReportHtml(
 
   const principleRows = principles
     .map((p) => {
-      const tone = toneOf(p.avg);
-      const warn = p.lowCount > 0 ? `<span class="tag-warn" title="${p.lowCount} file(s) scored <4">⚠ ${p.lowCount} low</span>` : "";
+      const tone = toneOf(p.avg, (m.directions ?? {})[p.q]);
+      const warn = p.badCount > 0 ? `<span class="tag-warn" title="${p.badCount} file(s) flagged bad">⚠ ${p.badCount} bad</span>` : "";
       return `<div class="pq">
         <span class="qn" title="${esc(p.q)}">${esc(p.q)}</span>
         <span class="qbar"><i class="${tone}" style="width:${Math.max(4, Math.min(100, (p.avg / 10) * 100))}%"></i></span>
@@ -470,7 +479,16 @@ export function renderReportHtml(
   .qbar i { display: block; height: 100%; border-radius: 3px; }
   .qbar.empty { background: transparent; border-style: dashed; }
   .qv { font-weight: 600; text-align: right; font-family: var(--mono); font-size: 12px; }
-  .qc { font-size: 11px; color: var(--muted); text-align: right; }
+  .qc { font-size: 11px; color: var(--muted); text-align: right; display: flex; flex-direction: column; gap: 2px; }
+  .qmeter {
+    display: block;
+    height: 5px;
+    background: var(--inset);
+    border: 1px solid var(--border-muted);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .qmeter i { display: block; height: 100%; }
   .qheat {
     grid-column: 2 / -1;
     display: flex;

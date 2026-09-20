@@ -3,20 +3,27 @@ import { isRecord } from "./guards.ts";
 // The score|choice|noul contract: the question union, its validation, and the
 // terminal presentation sink. A new answer type is one edit here.
 
+/** Which end of a question's value range is good; drives tone. Default: high. */
+export type Direction = "high" | "low";
+
 export interface ScoreQuestion {
   type: "score";
   instructions: string;
   criteria: string[];
+  direction?: Direction;
 }
 export interface ChoiceQuestion {
   type: "choice";
   instructions: string;
   criteria: Record<string, string | null>;
+  direction?: Direction;
 }
 export interface NoulQuestion {
   type: "noul";
   instructions: string;
   criteria?: { true?: string; false?: string };
+  /** Default "low": `true` (p ≥ 0.5) is bad. "high" inverts — `true` is good. */
+  direction?: Direction;
 }
 export type Question = ScoreQuestion | ChoiceQuestion | NoulQuestion;
 export type Questions = Record<string, Question>;
@@ -29,6 +36,12 @@ export function parseQuestion(id: string, q: unknown, source: string): Question 
     throw new Error(`${at}: 'type' must be score, choice, or noul`);
   if (typeof q.instructions !== "string" || q.instructions.length === 0)
     throw new Error(`${at}: 'instructions' must be a non-empty string`);
+  let direction: Direction | undefined;
+  if (q.direction !== undefined) {
+    if (q.direction !== "high" && q.direction !== "low")
+      throw new Error(`${at}: 'direction' must be high or low`);
+    direction = q.direction;
+  }
   switch (q.type) {
     case "score": {
       if (
@@ -37,7 +50,7 @@ export function parseQuestion(id: string, q: unknown, source: string): Question 
         !q.criteria.every((c) => typeof c === "string" && c.length > 0)
       )
         throw new Error(`${at}: 'criteria' must be an array of ≥2 non-empty level descriptions`);
-      return { type: "score", instructions: q.instructions, criteria: q.criteria };
+      return { type: "score", instructions: q.instructions, criteria: q.criteria, ...(direction && { direction }) };
     }
     case "choice": {
       if (!isRecord(q.criteria))
@@ -48,10 +61,10 @@ export function parseQuestion(id: string, q: unknown, source: string): Question 
           throw new Error(`${at}: criteria option '${opt}' must be a string or null`);
         criteria[opt] = rubric;
       }
-      return { type: "choice", instructions: q.instructions, criteria };
+      return { type: "choice", instructions: q.instructions, criteria, ...(direction && { direction }) };
     }
     case "noul": {
-      if (q.criteria === undefined) return { type: "noul", instructions: q.instructions };
+      if (q.criteria === undefined) return { type: "noul", instructions: q.instructions, ...(direction && { direction }) };
       if (!isRecord(q.criteria)) throw new Error(`${at}: 'criteria' must be a mapping with 'true'/'false'`);
       const criteria: { true?: string; false?: string } = {};
       for (const key of ["true", "false"] as const) {
@@ -60,7 +73,7 @@ export function parseQuestion(id: string, q: unknown, source: string): Question 
         if (typeof v !== "string") throw new Error(`${at}: criteria '${key}' must be a string`);
         criteria[key] = v;
       }
-      return { type: "noul", instructions: q.instructions, criteria };
+      return { type: "noul", instructions: q.instructions, criteria, ...(direction && { direction }) };
     }
     default: {
       const _exhaustive: never = q.type;
@@ -91,8 +104,9 @@ export interface ParsedAnswer {
   probs: [number, number][] | null;
 }
 
-export function toneOf(v: number | null): Tone {
+export function toneOf(v: number | null, dir: Direction = "high"): Tone {
   if (v === null) return "mut";
+  if (dir === "low") return v <= 3 ? "ok" : v <= 6 ? "warn" : "bad";
   return v >= 7 ? "ok" : v >= 4 ? "warn" : "bad";
 }
 
@@ -106,8 +120,9 @@ export function gradeOf(avg: number | null): string {
   return "F";
 }
 
-/** Interpret one raw answer record into a typed ParsedAnswer; fail fast on invalid shapes. */
-export function parseAnswer(q: string, a: unknown): ParsedAnswer {
+/** Interpret one raw answer record into a typed ParsedAnswer; fail fast on invalid shapes.
+ *  `dir` undefined = per-type legacy: score → high (high is good), noul → low (true is bad). */
+export function parseAnswer(q: string, a: unknown, dir?: Direction): ParsedAnswer {
   if (!isRecord(a)) throw new Error(`invalid answer for '${q}': expected record, got ${typeof a}`);
 
   let conf: number | null = null;
@@ -131,13 +146,13 @@ export function parseAnswer(q: string, a: unknown): ParsedAnswer {
 
   if (numeric !== null) {
     const display = Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1);
-    const tone = toneOf(numeric);
+    const tone = toneOf(numeric, dir);
     return { q, numeric, display, tone, confidence: conf, probabilities: probs, v: numeric, label: display, conf, probs };
   }
 
   if (typeof a.noul === "number" || typeof a.noul === "boolean") {
     const p = typeof a.noul === "boolean" ? (a.noul ? 1 : 0) : a.noul;
-    const isBad = p >= 0.5;
+    const isBad = dir === "high" ? p < 0.5 : p >= 0.5;
     const display = isBad ? `rework ${Math.round(p * 100)}%` : `pass ${Math.round((1 - p) * 100)}%`;
     const tone: Tone = isBad ? "bad" : "ok";
     return { q, numeric: p, display, tone, confidence: conf, probabilities: probs, v: p, label: display, conf, probs };
@@ -156,6 +171,8 @@ export interface RunTablePair {
   file: string;
   response: unknown;
   previous?: Record<string, unknown>;
+  /** Per-question direction override (from the run manifest); absent = default high. */
+  directions?: Record<string, Direction>;
 }
 
 /** Delta suffix for one answer vs its prior run, mirroring formatPair's diff notation. */
@@ -184,13 +201,13 @@ function deltaSuffix(a: Record<string, unknown>, prev: Record<string, unknown> |
  * cells tone-colored and suffixed with the delta vs the prior run when provided.
  */
 export function runTable(pairs: RunTablePair[], color = false): string {
-  const parsed = pairs.map(({ file, response, previous }) => {
+  const parsed = pairs.map(({ file, response, previous, directions }) => {
     const cells: { id: string; text: string; tone: Tone }[] = [];
     if (isRecord(response) && isRecord(response.answers)) {
       for (const [id, a] of Object.entries(response.answers)) {
         if (!isRecord(a)) continue;
         try {
-          const p = parseAnswer(id, a);
+          const p = parseAnswer(id, a, directions?.[id]);
           const prev = isRecord(previous) && isRecord(previous[id]) ? previous[id] : undefined;
           cells.push({ id, text: p.display + deltaSuffix(a, prev), tone: p.tone });
         } catch {

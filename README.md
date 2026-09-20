@@ -101,6 +101,7 @@ ask serve
   - `score`: Ordinal scales across descriptive criteria levels (0 to N-1).
   - `choice`: Categorical classifications mapped to option rubrics.
   - `noul`: Probabilistic binary true/false judgments.
+  - `direction: low` per question marks lower-is-better scales (violations, severity), so low scores render green instead of red; judge confidence renders as a low→high trust meter in reports.
 - **Granular vs Batch Execution**:
   - **Per-file** (default): Granular per-file scores and file-level accountability.
   - **Batch** (`--batch`): Aggregates all files into a single judge call to minimize API requests and judge holistic relationships.

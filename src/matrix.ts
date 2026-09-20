@@ -1,7 +1,7 @@
 import path from "node:path";
 import { isRecord } from "./guards.ts";
 import { loadAllManifests, readPairResponse, type RunManifest, type PairRecord } from "./history.ts";
-import { parseAnswer, type ParsedAnswer, type Tone } from "./answers.ts";
+import { parseAnswer, toneOf, type Direction, type ParsedAnswer, type Tone } from "./answers.ts";
 export { loadAllManifests, parseAnswer, type ParsedAnswer, type Tone };
 
 const URL_RE = /^https?:\/\//;
@@ -230,6 +230,10 @@ export async function buildMatrixData(
   const isFile = filteredRuns.some((m) => m.files.some((f) => path.normalize(f) === targetPath));
   const isFolder = !isFile;
 
+  // Per-question direction (lower-is-better), newest manifest that records it wins.
+  const directions: Record<string, Direction> = {};
+  for (const m of manifests) Object.assign(directions, m.directions ?? {});
+
   const matchFile = (filePath: string): boolean => {
     const norm = path.normalize(filePath);
     if (!targetPath) return true;
@@ -272,7 +276,7 @@ export async function buildMatrixData(
       if (!isRecord(respObj) || !isRecord(respObj.answers)) continue;
 
       for (const [qid, ansRaw] of Object.entries(respObj.answers)) {
-        const parsed = parseAnswer(qid, ansRaw);
+        const parsed = parseAnswer(qid, ansRaw, directions[qid]);
         let list = qAnswersMap.get(qid);
         if (!list) {
           list = [];
@@ -307,7 +311,7 @@ export async function buildMatrixData(
           const min = Math.min(...numerics);
           const max = Math.max(...numerics);
           const display = Number.isInteger(avg) ? String(avg) : avg.toFixed(1);
-          const tone = avg >= 7 ? "ok" : avg >= 4 ? "warn" : "bad";
+          const tone = toneOf(avg, directions[qid]);
           row.cells[m.runId] = {
             runId: m.runId,
             timestamp: m.timestamp,

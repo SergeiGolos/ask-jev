@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formatPair, parseQuestion, runTable } from "../src/answers.ts";
+import { formatPair, parseAnswer, parseQuestion, runTable, toneOf } from "../src/answers.ts";
 
 test("formatPair shapes scores with legend labels, noul and choice", () => {
   const out = formatPair("src/a.ts", {
@@ -59,4 +59,32 @@ test("runTable colors cells by tone and omits codes when color is off", () => {
   const colored = runTable(pairs, true);
   assert.ok(colored.includes("\x1b[32m")); // ok tone → green
   assert.ok(colored.includes("\x1b[31m1\x1b[0m")); // bad tone → red (last column, unpadded)
+});
+
+test("direction: low flips tone so low scores render healthy", () => {
+  assert.equal(parseQuestion("v", { type: "score", instructions: "i", criteria: ["a", "b"], direction: "low" }, "t").direction, "low");
+  assert.throws(
+    () => parseQuestion("v", { type: "score", instructions: "i", criteria: ["a", "b"], direction: "up" }, "t"),
+    /question 'v'.*'direction' must be high or low/,
+  );
+
+  // score: low is good, high is bad; default (high) unchanged
+  assert.equal(parseAnswer("v", { score: 1 }, "low").tone, "ok");
+  assert.equal(parseAnswer("v", { score: 5 }, "low").tone, "warn");
+  assert.equal(parseAnswer("v", { score: 8 }, "low").tone, "bad");
+  assert.equal(parseAnswer("v", { score: 8 }).tone, "ok");
+  assert.equal(toneOf(9, "low"), "bad");
+
+  // noul: direction high means true is good; default (low, true is bad) unchanged
+  assert.equal(parseAnswer("w", { noul: 0.9 }, "high").tone, "ok");
+  assert.equal(parseAnswer("w", { noul: 0.1 }, "high").tone, "bad");
+  assert.equal(parseAnswer("w", { noul: 0.9 }).tone, "bad");
+});
+
+test("runTable colors low-direction cells by inverted tone", () => {
+  const colored = runTable(
+    [{ file: "a.ts", response: { answers: { violations: { score: 1 } } }, directions: { violations: "low" } }],
+    true,
+  );
+  assert.ok(colored.includes("\x1b[32m1\x1b[0m")); // 1 violation → green, not red
 });

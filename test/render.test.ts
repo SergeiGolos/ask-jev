@@ -236,6 +236,12 @@ test("parseRunArgs: captures multiple questions positionally, via -q, and comma-
   assert.deepEqual(p3.questions, ["q1", "q2"]);
 });
 
+test("parseRunArgs: collects multiple files after -f (shell glob expansion)", () => {
+  const flags = parseRunArgs(["gut-check/boy-scout", "-f", "src/a.ts", "src/b.ts", "src/c.ts"]);
+  assert.deepEqual(flags.questions, ["gut-check/boy-scout"]);
+  assert.deepEqual(flags.files, ["src/a.ts", "src/b.ts", "src/c.ts"]);
+});
+
 test("parseRunArgs rejects: missing value, malformed -t, reserved token, unknown flag", () => {
   assert.throws(() => parseRunArgs(["-f"]), /'-f' needs a value/);
   assert.throws(() => parseRunArgs(["-t", "novalue"]), /-t expects name=value/);
