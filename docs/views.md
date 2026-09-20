@@ -14,46 +14,62 @@ Source of truth: `src/web/index.html`, `src/web/app.js`, `src/web/style.css`, se
 ## Alignment
 
 Fill in the **Proposed** column to align this document with the intended restructure — empty
-means undecided. **Current** bullets are today's code only (the ➕ fills spec'd in §4 are
-deliberately excluded here). Once filled, the §4 sections update to match; a Proposed entry
-contradicting a ➕ fill wins.
+means undecided. **Current** bullets describe today's behavior as generic concepts (details
+live in §4).
+
+Notation: `[…]` marks an optional part, and every optional path part is written
+`/p/<path>` — `/p/` is the reserved prefix that ends the preceding segment, so `<name>`
+values containing `/` stay parseable. Each optional route gets **one row per shape** (bare
+and `/p/`-present) so the two can be aligned independently. Once filled, the §4 sections
+update to match.
 
 ### Header (sticky topbar)
 
 | Route | Current | Proposed |
 |---|---|---|
-| `#/trends[/<path>]` | • crumb `ask ▸ trends ▸ <path>` (target hidden without param)<br>• Trends tab `.active` | |
-| `#/runs[/<path>]` | • today: crumb `ask ▸ runs`, no target unless a runId is in the URL<br>• Runs tab `.active` | |
-| `#/run/<runId>` | • crumb target = runId sliced to 8 chars (full id as title) | |
-| `#/questions` | • crumb `ask ▸ questions`, no target<br>• Questions tab `.active` | |
-| `#/questions/<name>/p/<path>` | • new route; nearest today: `#/questions/<name>` showed crumb target = ask name | |
-| `#/edit/<name>` | • today's `#/questions/<name>`: crumb target = ask name | |
+| `#/trends` | • breadcrumb: view only<br>• Trends tab active | |
+| `#/trends/p/<path>` | • breadcrumb: view + target path | |
+| `#/runs` | • breadcrumb: view only<br>• Runs tab active | |
+| `#/runs/p/<path>` | • none today — a `#/runs/…` parameter currently means a run id | |
+| `#/run/<runId>` | • breadcrumb: view + short run id | |
+| `#/run/<runId>/p/<path>` | • none today | |
+| `#/questions` | • breadcrumb: view only<br>• Questions tab active | |
+| `#/questions/<name>` | • today this URL is the ask editor; breadcrumb shows the ask name | |
+| `#/questions/<name>/p/<path>` | • none today | |
+| `#/edit/<name>` | • breadcrumb shows the ask name | |
 
-Header-wide, all routes: three tabs (Trends / Runs / Questions) → `#/trends`, `#/runs`,
-`#/questions`; theme toggle in utils; unknown first segment → `runs`.
+Header-wide, all routes: three tabs (Trends / Runs / Questions), theme toggle, unknown first
+segment → `runs`.
 
 ### Navigation (left sidebar)
 
 | Route | Current | Proposed |
 |---|---|---|
-| `#/trends[/<path>]` | • file tree from `/api/tree`: root "/ (All Files)", directories, files, `runCount` badges<br>• `#treeFilter` client-side hide of non-matching files<br>• click node → `#/trends/<path>` | |
-| `#/runs[/<path>]` | • today: run list grouped by ask from `/api/runs` (newest first; a multi-ask run appears under each ask), `#runsFilter`, group headers link to the ask | |
-| `#/run/<runId>` | • same runs sidebar; `.active` on the selected runId row | |
-| `#/questions` | • today: folder tree built from `/` in ask names, status dots (runnable / ⚠ no schema), `#questionsFilter`, **＋ New** in the sidebar header | |
+| `#/trends` | • file tree of analyzed files with run counts<br>• filter box | |
+| `#/trends/p/<path>` | • same tree, scoped to the path | |
+| `#/runs` | • recent runs grouped by ask, newest first<br>• filter box | |
+| `#/runs/p/<path>` | • none today | |
+| `#/run/<runId>` | • same run list, selected run highlighted | |
+| `#/run/<runId>/p/<path>` | • none today | |
+| `#/questions` | • asks as folders/files with runnability status<br>• filter box<br>• New action | |
+| `#/questions/<name>` | • today: question tree, ask highlighted | |
 | `#/questions/<name>/p/<path>` | • none today | |
-| `#/edit/<name>` | • today (as `#/questions/<name>`): questions tree, `.active` on the current ask; item clicks pass the dirty guard | |
+| `#/edit/<name>` | • today: question tree; leaving with unsaved changes prompts | |
 
 ### Content (main area)
 
-| Route                         | Current                                                                                                                                                                                                                                               | Proposed |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| `#/trends[/<path>]`           | • control bar: target badge + path, ask/question/date/grep filters, Reset, **▶ Run…** + Batch<br>• matrix: runs (newest left) × questions grouped by ask; tone cells, delta badges, compare links<br>• legend + status line, hover tooltips, 30s poll |          |
-| `#/runs[/<path>]`             | • today: empty state only ("No Run Selected") — the list itself lives in the sidebar                                                                                                                                                                  |          |
-| `#/run/<runId>`               | • run bar: id chip, asks, model chips, timestamp, pair count, commit link<br>• report iframe (`/api/runs/<id>/report`, server-rendered)                                                                                                               |          |
-| `#/questions`                 | • today: empty state "No Question Selected" + **＋ New Question**                                                                                                                                                                                      |          |
-| `#/questions/<name>/p/<path>` | • none today                                                                                                                                                                                                                                          |          |
-| `#/edit/<name>`               | • today (at `#/questions/<name>`): toolbar (badges, category inserters, CRUD actions, Save / Ctrl+S), frontmatter card, CodeMirror editor                                                                                                             |          |
-|                               |                                                                                                                                                                                                                                                       |          |
+| Route | Current | Proposed |
+|---|---|---|
+| `#/trends` | • filter bar<br>• matrix of each question's values across runs<br>• legend, hover detail | |
+| `#/trends/p/<path>` | • same matrix scoped to the path | |
+| `#/runs` | • empty state only — the list lives in the sidebar | |
+| `#/runs/p/<path>` | • none today | |
+| `#/run/<runId>` | • run summary bar<br>• embedded server-rendered report | |
+| `#/run/<runId>/p/<path>` | • none today | |
+| `#/questions` | • empty state with a New action | |
+| `#/questions/<name>` | • today: the ask editor | |
+| `#/questions/<name>/p/<path>` | • none today | |
+| `#/edit/<name>` | • editor: toolbar, frontmatter summary card, code editor | |
 
 ## 1. App shell and layout
 
@@ -97,12 +113,12 @@ Hash-based; `applyRoute()` is the single source of truth (runs on load for deep 
 ➕ filled route table:
 
 ```
-#/trends[/<path>]      path = file-or-directory path (may contain "/")
-#/runs[/<path>]        recent runs; optional path filter; file-tree nav like trends
-#/run/<runId>          runId = UUIDv7 from history — run report (detail)
-#/questions            recently run questions, filtered by file
-#/questions/<name>/p/<path>   one ask's values across runs — trends-style drill-down
-#/edit/<name>          the ask editor — the currently selected question
+#/trends[/p/<path>]            file-or-directory scope (optional) — trend matrix
+#/runs[/p/<path>]              recent runs; optional path scope; file-tree nav like trends
+#/run/<runId>[/p/<path>]       runId = UUIDv7 from history — run report; optional path scope
+#/questions                    recently run questions, filtered by file
+#/questions/<name>[/p/<path>]  one ask's values across runs — trends-style drill-down
+#/edit/<name>                  the ask editor — the currently selected question
 unknown first segment → runs          (was: trends)
 ```
 
@@ -112,17 +128,18 @@ Notes:
   `#/questions/<name>/p/<path>` drill-down); `#/run/<runId>` and `#/edit/<name>` are the
   detail/editor views. The old `#/runs[/<runId>]` and `#/questions[/<name>]` double-duty
   splits into `#/run` + `#/runs`; editing lives only at `#/edit/<name>`.
-- `#/run/<runId>` and `#/edit/<name>` are param-required: opened without a param they show
-  their view's empty state. `#/questions/<name>/p/<path>` requires `<name>`; the `/p/<path>`
-  suffix is optional and defaults to all files (mirroring `#/trends` with no param).
-- `router.js` splits `#/questions/<name>/p/<path>` on the **first** `/p/` segment:
-  everything before is the ask name (may contain `/`), everything after is the path.
+- `/p/` is the **reserved path-prefix marker**: in any route, everything after a `/p/`
+  segment is a path scope. The prefix is what keeps `<name>` segments that contain `/`
+  parseable — the router splits on the first `/p/`, and ask names must not contain a `/p/`
+  segment.
+- `#/run/<runId>` and `#/edit/<name>` are param-required: without the param they show their
+  view's empty state. Every `[/p/<path>]` part is optional and defaults to all files.
 - Per-route param handling mirrors today: switch slots → set crumb target → apply param,
   skipping work when the param is unchanged.
 
 ## 4. Views by route
 
-### 4.1 `#/trends[/<path>]` — Trend matrix  **[today, unchanged]**
+### 4.1 `#/trends[/p/<path>]` — Trend matrix  **[today, unchanged]**
 
 One view regardless of param; `path` selects the target (file or directory) and filters the
 matrix. Data domains: file tree, matrix.
@@ -154,7 +171,7 @@ matrix. Hover tooltips: document-level delegation over `data-tooltip` (cell), `d
 
 ---
 
-### 4.2 `#/runs[/<path>]` — Recent runs list  **➕ reworked**
+### 4.2 `#/runs[/p/<path>]` — Recent runs list  **➕ reworked**
 
 Data domain: run manifests. *"List of recent runs with the same navigation as trends."*
 
@@ -177,9 +194,10 @@ pairCount, sha, repo`).
 
 ---
 
-### 4.3 `#/run/<runId>` — Run report (detail)  **[today, renamed route]**
+### 4.3 `#/run/<runId>[/p/<path>]` — Run report (detail)  **[today, renamed route]**
 
-Same content as today's `#/runs/<runId>`; only the route segment changed.
+Same content as today's `#/runs/<runId>`; route renamed. The optional `/p/<path>` scope is
+new — behavior per the Alignment tables (Proposed empty).
 
 **Left navigation**: the shared file tree; the run's target path is `.active` when the route
 was entered through `#/runs/<path>` (➕: today's sidebar run-item highlight is retired with
@@ -222,7 +240,7 @@ count; enrich from `GET /api/questions` (`description`, `isRunnable`). Row click
 
 ---
 
-### 4.5 `#/questions/<name>/p/<path>` — Question drill-down  **➕ new view**
+### 4.5 `#/questions/<name>[/p/<path>]` — Question drill-down  **➕ new view**
 
 Data domain: matrix scoped to one ask. *"Works like the trend but drilling down only to a
 specific question and its values."*
@@ -302,9 +320,9 @@ CRUD flows unchanged: New / Duplicate (POST `/api/questions`), Move (POST
 - `treeFilter` filtering is lost when the poller re-renders the tree.
 - Dead code: `populateFilters` fills a `#runAskSelect` dropdown that does not exist in
   index.html (null-guarded, silent) — delete during the split.
-- The `/p/` delimiter in `#/questions/<name>/p/<path>` splits on first occurrence; an ask
-  with a `/p/` segment in its own name followed by more segments would mis-parse. Accepted —
-  such names are pathological, and the ask store already rejects invalid names.
+- The `/p/` prefix is the reserved split marker in every route's optional path part; the
+  router splits on its first occurrence. An ask name containing a `/p/` segment would
+  mis-parse — accepted as pathological; the ask store already rejects invalid names.
 - ➕ The shared tree component must let each view own click-routing (trends → `#/trends/…`,
   runs → `#/runs/…`) and re-render without losing the filter text (today's gotcha, fixed by
   the component owning its filter state).
@@ -413,8 +431,8 @@ to `runs`; param joining (`/`-containing paths and names) stays in `router.js`.
 - Param-required routes (`#/run/<runId>`, `#/edit/<name>`) show their empty state without a
   param — never a broken fetch. `#/questions/<name>` requires the name; `/p/<path>` defaults
   to all files.
-- `router.js` splits `#/questions/<name>/p/<path>` at the first `/p/` segment — the one
-  place that convention lives.
+- `router.js` splits every route at the first `/p/` segment — the one place that convention
+  lives.
 - The dirty guard protects navigation away from editor routes on sidebar clicks; tab switches
   and manual hash edits bypass. Current semantics — keep, or change consciously.
 - Poller: skipped when `document.hidden`; trends refresh no-ops when tree JSON is unchanged;
