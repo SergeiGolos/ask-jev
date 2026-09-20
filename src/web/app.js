@@ -155,15 +155,17 @@ function populateFilters() {
   qSel.value = prevQ;
 
   const runSel = $("runAskSelect");
-  const prevRun = runSel.value;
-  runSel.innerHTML = "";
-  for (const ask of treeData.availableAsks || []) {
-    const opt = document.createElement("option");
-    opt.value = ask;
-    opt.textContent = ask;
-    runSel.appendChild(opt);
+  if (runSel) {
+    const prevRun = runSel.value;
+    runSel.innerHTML = "";
+    for (const ask of treeData.availableAsks || []) {
+      const opt = document.createElement("option");
+      opt.value = ask;
+      opt.textContent = ask;
+      runSel.appendChild(opt);
+    }
+    if (prevRun) runSel.value = prevRun;
   }
-  if (prevRun) runSel.value = prevRun;
 
   if (treeData.timeRange) {
     // Optionally set min/max
@@ -439,37 +441,258 @@ $("btnReset").addEventListener("click", () => {
   loadMatrix();
 });
 
-// Run the selected ask against the current tree target.
-$("btnRun").addEventListener("click", async () => {
-  const ask = $("runAskSelect").value;
-  const status = $("matrixStatus");
-  if (!ask) {
-    status.style.display = "block";
-    status.textContent = "No asks available — create one with `ask new <name>`.";
+// Run Dialog State
+let runDialogAsks = [];
+let runDialogFiles = [];
+let selectedRunAsks = new Set();
+let selectedRunFiles = new Set();
+
+function updateRunDialogCounts() {
+  $("runAsksCount").textContent = String(selectedRunAsks.size);
+  $("runFilesCount").textContent = String(selectedRunFiles.size);
+  const btn = $("btnRunModalExecute");
+  const isBatch = $("runBatchOption").checked;
+  const aCount = selectedRunAsks.size;
+  const fCount = selectedRunFiles.size;
+  if (aCount === 0 || fCount === 0) {
+    btn.disabled = true;
+    btn.textContent = "Run";
+  } else {
+    btn.disabled = false;
+    const askLabel = `${aCount} ask${aCount === 1 ? "" : "s"}`;
+    const fileLabel = `${fCount} file${fCount === 1 ? "" : "s"}`;
+    btn.textContent = isBatch ? `Run Batch (${askLabel}, ${fileLabel})` : `Run (${askLabel} × ${fileLabel})`;
+  }
+}
+
+function filterRunFiles() {
+  const filter = $("runFileGrep").value.trim();
+  let re = null;
+  if (filter) {
+    try { re = new RegExp(filter, "i"); } catch { /* fallback to substring */ }
+  }
+  const items = $("runFilesList").querySelectorAll(".run-list-item");
+  let matchCount = 0;
+  for (const item of items) {
+    const file = item.dataset.file || "";
+    const matches = !filter || (re ? re.test(file) : file.toLowerCase().includes(filter.toLowerCase()));
+    item.style.display = matches ? "" : "none";
+    if (matches) matchCount++;
+  }
+  $("runFileGrepStatus").textContent = filter ? `${matchCount} / ${items.length}` : "";
+}
+
+function closeRunDialog() {
+  $("runModalBackdrop").style.display = "none";
+}
+
+async function openRunDialog(options = {}) {
+  $("runModalError").textContent = "";
+
+  const batchChecked = options.batch !== undefined ? options.batch : ($("quickBatchCheck")?.checked ?? false);
+  $("runBatchOption").checked = batchChecked;
+
+  try {
+    const qData = await fetchJson("/api/questions");
+    runDialogAsks = (qData.questions || []).filter((q) => q.isRunnable !== false);
+  } catch {
+    runDialogAsks = (treeData?.availableAsks || []).map((name) => ({ name, description: "" }));
+  }
+
+  try {
+    const fData = await fetchJson("/api/files");
+    runDialogFiles = fData.files || [];
+  } catch {
+    const files = [];
+    const walk = (node) => {
+      if (!node) return;
+      if (node.type === "file") files.push(node.path);
+      for (const c of node.children || []) walk(c);
+    };
+    walk(treeData?.root);
+    runDialogFiles = files;
+  }
+
+  selectedRunAsks = new Set();
+  if (options.initialAsks?.length) {
+    for (const a of options.initialAsks) selectedRunAsks.add(a);
+  } else if (runDialogAsks.length === 1) {
+    selectedRunAsks.add(runDialogAsks[0].name);
+  }
+
+  selectedRunFiles = new Set();
+  const initPath = options.initialPath || currentPath;
+  if (initPath) {
+    for (const f of runDialogFiles) {
+      if (f === initPath || f.startsWith(initPath.replace(/\/+$/, "") + "/")) {
+        selectedRunFiles.add(f);
+      }
+    }
+  }
+
+  const asksContainer = $("runAsksList");
+  asksContainer.innerHTML = "";
+  for (const q of runDialogAsks) {
+    const label = document.createElement("label");
+    label.className = "run-list-item";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = q.name;
+    cb.checked = selectedRunAsks.has(q.name);
+    cb.onchange = () => {
+      if (cb.checked) selectedRunAsks.add(q.name);
+      else selectedRunAsks.delete(q.name);
+      updateRunDialogCounts();
+    };
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "run-list-item-name";
+    nameSpan.textContent = q.name;
+    label.appendChild(cb);
+    label.appendChild(nameSpan);
+    if (q.description) {
+      const descSpan = document.createElement("span");
+      descSpan.className = "run-list-item-desc";
+      descSpan.textContent = q.description;
+      label.appendChild(descSpan);
+    }
+    asksContainer.appendChild(label);
+  }
+
+  const filesContainer = $("runFilesList");
+  filesContainer.innerHTML = "";
+  for (const f of runDialogFiles) {
+    const label = document.createElement("label");
+    label.className = "run-list-item";
+    label.dataset.file = f;
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = f;
+    cb.checked = selectedRunFiles.has(f);
+    cb.onchange = () => {
+      if (cb.checked) selectedRunFiles.add(f);
+      else selectedRunFiles.delete(f);
+      updateRunDialogCounts();
+    };
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "run-list-item-name";
+    nameSpan.textContent = f;
+    label.appendChild(cb);
+    label.appendChild(nameSpan);
+    filesContainer.appendChild(label);
+  }
+
+  $("runFileGrep").value = "";
+  $("runFileGrepStatus").textContent = "";
+  updateRunDialogCounts();
+  $("runModalBackdrop").style.display = "flex";
+}
+
+$("btnRunSelectAllAsks").onclick = () => {
+  for (const q of runDialogAsks) selectedRunAsks.add(q.name);
+  $("runAsksList").querySelectorAll("input[type=checkbox]").forEach((cb) => (cb.checked = true));
+  updateRunDialogCounts();
+};
+
+$("btnRunClearAsks").onclick = () => {
+  selectedRunAsks.clear();
+  $("runAsksList").querySelectorAll("input[type=checkbox]").forEach((cb) => (cb.checked = false));
+  updateRunDialogCounts();
+};
+
+$("btnRunSelectMatchingFiles").onclick = () => {
+  const items = $("runFilesList").querySelectorAll(".run-list-item");
+  for (const item of items) {
+    if (item.style.display !== "none") {
+      const cb = item.querySelector("input[type=checkbox]");
+      if (cb) {
+        cb.checked = true;
+        selectedRunFiles.add(item.dataset.file);
+      }
+    }
+  }
+  updateRunDialogCounts();
+};
+
+$("btnRunSelectAllFiles").onclick = () => {
+  for (const f of runDialogFiles) selectedRunFiles.add(f);
+  $("runFilesList").querySelectorAll("input[type=checkbox]").forEach((cb) => (cb.checked = true));
+  updateRunDialogCounts();
+};
+
+$("btnRunClearFiles").onclick = () => {
+  selectedRunFiles.clear();
+  $("runFilesList").querySelectorAll("input[type=checkbox]").forEach((cb) => (cb.checked = false));
+  updateRunDialogCounts();
+};
+
+$("runFileGrep").addEventListener("input", filterRunFiles);
+
+$("runBatchOption").addEventListener("change", () => {
+  if ($("quickBatchCheck")) $("quickBatchCheck").checked = $("runBatchOption").checked;
+  updateRunDialogCounts();
+});
+
+$("quickBatchCheck")?.addEventListener("change", () => {
+  $("runBatchOption").checked = $("quickBatchCheck").checked;
+  updateRunDialogCounts();
+});
+
+$("btnRunModalClose").onclick = closeRunDialog;
+$("btnRunModalCancel").onclick = closeRunDialog;
+
+$("runModalBackdrop").onclick = (e) => {
+  if (e.target === $("runModalBackdrop")) closeRunDialog();
+};
+
+$("btnRunModalExecute").onclick = async () => {
+  if (selectedRunAsks.size === 0) {
+    $("runModalError").textContent = "Select at least one question.";
     return;
   }
-  const btn = $("btnRun");
+  if (selectedRunFiles.size === 0) {
+    $("runModalError").textContent = "Select at least one file.";
+    return;
+  }
+  const btn = $("btnRunModalExecute");
   btn.disabled = true;
-  status.style.display = "block";
-  status.textContent = `Running '${ask}' on ${currentPath || "/ (All Files)"} …`;
+  btn.textContent = "Running…";
+  $("runModalError").textContent = "";
+
+  const asks = Array.from(selectedRunAsks);
+  const files = Array.from(selectedRunFiles);
+  const batch = $("runBatchOption").checked;
+
   try {
     const res = await fetch("/api/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ask, path: currentPath }),
+      body: JSON.stringify({ asks, files, batch }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error(err.error || `HTTP ${res.status}`);
     }
     const out = await res.json();
+    closeRunDialog();
     await refreshAll(true);
-    status.innerHTML = `Run <a href="#/runs/${out.runId}" title="Open run report">${out.runId.slice(0, 8)}</a> recorded (${out.pairs.length} pair${out.pairs.length === 1 ? "" : "s"})`;
+    const status = $("matrixStatus");
+    status.style.display = "block";
+    const runsCount = out.runs?.length || 1;
+    const pairsCount = out.pairs?.length || 0;
+    status.innerHTML = `Run complete: ${runsCount} ask${runsCount === 1 ? "" : "s"} (${pairsCount} pair${pairsCount === 1 ? "" : "s"}) recorded.`;
   } catch (err) {
-    status.textContent = `Run failed: ${err.message}`;
-  } finally {
+    $("runModalError").textContent = `Run failed: ${err.message}`;
     btn.disabled = false;
+    updateRunDialogCounts();
   }
+};
+
+$("btnRun").addEventListener("click", () => {
+  openRunDialog({
+    initialAsks: $("askSelect")?.value ? [$("askSelect").value] : [],
+    initialPath: currentPath,
+    batch: $("quickBatchCheck")?.checked,
+  });
 });
 
 /** Fetch fresh tree data; re-render tree + filters + matrix when it changed (or force is set). */
@@ -1332,32 +1555,11 @@ $("btnRunQuestion").addEventListener("click", async () => {
   if (isDirty) {
     await saveCurrentQuestion();
   }
-  const targetFile = prompt(
-    `Run ask '${currentQuestion.name}' against file or directory:`,
-    currentPath || "src/serve.ts",
-  );
-  if (targetFile === null) return;
-  const btn = $("btnRunQuestion");
-  btn.disabled = true;
-  btn.textContent = "Running...";
-  try {
-    const res = await fetch("/api/run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ask: currentQuestion.name, path: targetFile }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || `HTTP ${res.status}`);
-    }
-    const out = await res.json();
-    navigate(`#/runs/${out.runId}`);
-  } catch (err) {
-    alert(`Run failed: ${err.message}`);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "▶ Run";
-  }
+  openRunDialog({
+    initialAsks: [currentQuestion.name],
+    initialPath: currentPath,
+    batch: $("quickBatchCheck")?.checked,
+  });
 });
 
 window.switchView = switchView;

@@ -101,10 +101,12 @@
           <button type="button" class="btn-reset" id="btnReset" title="Reset filters">Reset</button>
 
           <div class="filter-group run-group">
-            <label for="runAskSelect">Run</label>
+            <label>Run</label>
             <div class="run-inputs">
-              <select id="runAskSelect" title="Ask to run"></select>
-              <button type="button" class="btn-run" id="btnRun" title="Run the selected ask against the current target">Run</button>
+              <button type="button" class="btn-run" id="btnRun" title="Configure and run asks against files">▶ Run…</button>
+              <label class="run-batch-quick" title="Batch mode: analyze files in single prompt">
+                <input type="checkbox" id="quickBatchCheck"> Batch
+              </label>
             </div>
           </div>
         </div>
@@ -151,7 +153,7 @@
           </div>
 
           <div class="q-actions">
-            <button type="button" class="btn-sm btn-action" id="btnRunQuestion" title="Run this ask">▶ Run</button>
+            <button type="button" class="btn-sm btn-action" id="btnRunQuestion" title="Run this ask">▶ Run…</button>
             <button type="button" class="btn-sm btn-action" id="btnMoveQuestion" title="Rename or move">Rename/Move</button>
             <button type="button" class="btn-sm btn-action" id="btnDuplicateQuestion" title="Duplicate ask">Duplicate</button>
             <button type="button" class="btn-sm btn-danger" id="btnDeleteQuestion" title="Delete ask">Delete</button>
@@ -211,6 +213,56 @@
       <div class="modal-actions">
         <button type="button" class="btn-sm" id="btnModalCancel">Cancel</button>
         <button type="button" class="btn-sm btn-primary" id="btnModalConfirm">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Run Modal Dialog -->
+  <div class="modal-backdrop" id="runModalBackdrop" style="display: none;">
+    <div class="modal-dialog run-modal-dialog" id="runModalDialog">
+      <div class="run-modal-header">
+        <h3 class="modal-title">Run Asks</h3>
+        <button type="button" class="btn-icon" id="btnRunModalClose" title="Close">✕</button>
+      </div>
+      <div class="run-modal-body">
+        <div class="run-modal-col">
+          <div class="run-col-header">
+            <span class="run-col-title">Questions (<span id="runAsksCount">0</span> selected)</span>
+            <div class="run-col-actions">
+              <button type="button" class="btn-link" id="btnRunSelectAllAsks">All</button>
+              <button type="button" class="btn-link" id="btnRunClearAsks">None</button>
+            </div>
+          </div>
+          <div class="run-list" id="runAsksList"></div>
+        </div>
+        <div class="run-modal-col">
+          <div class="run-col-header">
+            <span class="run-col-title">Files (<span id="runFilesCount">0</span> selected)</span>
+            <div class="run-col-actions">
+              <button type="button" class="btn-link" id="btnRunSelectMatchingFiles" title="Select matching files">Select match</button>
+              <button type="button" class="btn-link" id="btnRunSelectAllFiles">All</button>
+              <button type="button" class="btn-link" id="btnRunClearFiles">None</button>
+            </div>
+          </div>
+          <div class="run-grep-bar">
+            <input type="text" id="runFileGrep" placeholder="Grep files (regex or substring)..." autocomplete="off">
+            <span class="grep-status" id="runFileGrepStatus"></span>
+          </div>
+          <div class="run-list" id="runFilesList"></div>
+        </div>
+      </div>
+      <div class="run-modal-footer">
+        <div class="run-footer-left">
+          <label class="run-batch-label" title="Judge all selected files in a single prompt">
+            <input type="checkbox" id="runBatchOption">
+            <span>Batch mode (<code>--batch</code>)</span>
+          </label>
+          <div class="modal-error" id="runModalError"></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-sm" id="btnRunModalCancel">Cancel</button>
+          <button type="button" class="btn-sm btn-primary" id="btnRunModalExecute">Run</button>
+        </div>
       </div>
     </div>
   </div>

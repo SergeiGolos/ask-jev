@@ -1,29 +1,59 @@
 ---
-description: "Per-file SOLID-adherence review with a rework flag"
+description: "Per-file SOLID review: one pass flag plus a violation score per principle"
 model: jev-latest
-args:
-  focus: "SOLID adherence"
+schema:
+  pass:
+    type: noul
+    instructions: "Does {{filename}} pass the SOLID standard: no principle shows its strong signal — no NotImplemented stubs, no type-switch dispatch in core logic, no hardwired news of low-level concretes in policy code, and concern mixing is mild?"
+    criteria:
+      true: "Passes — no principle violation warrants a rework"
+      false: "Fails — one principle clearly violated, or two or more smells present (automatic fail)"
+  srp_violations:
+    type: score
+    instructions: "God Class — one class/module juggles several unrelated concerns (parse + persist + HTTP + format) whose helper methods form distinct clusters; multiple reasons to change in one file"
+    criteria: &scale
+      - "Absent — no instances in the file"
+      - "Minor — one or two isolated instances with limited impact"
+      - "Moderate — repeated instances, or one serious instance"
+      - "Severe — pervasive; the file is defined by it"
+  ocp_violations:
+    type: score
+    instructions: "Switch-on-Type / Conditional Cascade — core logic dispatches on a type-code/kind enum via switch or if-else chains, so adding a variant requires editing this dispatch instead of adding a type"
+    criteria: *scale
+  lsp_violations:
+    type: score
+    instructions: "Broken Substitutability — subclass methods throw NotImplementedError/UnsupportedOperationException, return dummies, or callers guard base-type use with instanceof/type checks"
+    criteria: *scale
+  isp_violations:
+    type: score
+    instructions: "Fat Interface — one wide interface/protocol whose implementers leave some methods empty bodies, pass, or throw, forcing unused methods on heterogeneous clients"
+    criteria: *scale
+  dip_violations:
+    type: score
+    instructions: "Hardwired Dependencies — high-level logic news up concrete DB/HTTP/config/clock objects inline with no injection seam, so the unit cannot be tested without real services"
+    criteria: *scale
 ---
-Review the source file `$filename` for adherence to the SOLID principles (Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion).
+Judge `{{filename}}` against SOLID as five single-file checks:
+- SRP: a unit has one reason to change.
+- OCP: open for extension, closed for modification — new variants arrive as new types behind a stable interface, not edits to dispatch code.
+- LSP: subtypes are usable through base references without breaking caller expectations (preconditions not strengthened, postconditions not weakened).
+- ISP: clients are not forced to depend on methods they don't use.
+- DIP: high-level policy depends on abstractions; concrete construction and I/O enter through constructor/parameter seams at the edges.
+
+Score each principle's violations below 0 (absent) to 3 (severe) — the goal is
+a low score. Judge only evidence visible in the file.
+
+Smells:
+- `srp_violations` — God Class: one class/module juggles several unrelated concerns whose helper methods form distinct clusters — multiple reasons to change in one file.
+- `ocp_violations` — Switch-on-Type: core logic dispatches on a type-code/kind enum via switch or if-else chains; extension requires editing the dispatch.
+- `lsp_violations` — Broken Substitutability: NotImplementedError stubs, dummy returns from overridden methods, or instanceof/type guards before base-type use.
+- `isp_violations` — Fat Interface: a wide interface whose implementers leave methods empty/passing/throwing, forcing unused methods on clients.
+- `dip_violations` — Hardwired Dependencies: concrete DB/HTTP/config/clock objects created inline in high-level logic, no injection seam, untestable without real services.
+
+Not violations: dispatch that genuinely models data-shape differences with
+exhaustive handling at a single boundary; injecting an injected factory;
+interfaces fixed by an external framework contract.
 
 The complete file:
 
-$content
-
-```schema
-overall:
-  type: score
-  instructions: "Overall, how strongly does the file adhere to the SOLID principles? Judge only evidence visible in the file."
-  criteria:
-    - "Blatant violations across several principles; untestable and risky to change"
-    - "Serious violations in multiple principles"
-    - "Mixed: partial adherence, clear violations remain"
-    - "Mostly adherent; only minor violations"
-    - "Exemplary adherence without over-engineering"
-flag:
-  type: noul
-  instructions: "Would a senior reviewer flag this file for refactoring primarily because of design (SOLID) issues?"
-  criteria:
-    true: "Yes — design issues alone warrant a refactor"
-    false: "No — the design is acceptable"
-```
+{{content}}

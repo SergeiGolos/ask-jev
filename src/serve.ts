@@ -42,6 +42,7 @@ export interface RunningServer {
 async function filesUnder(pattern: string, cwd: string): Promise<string[]> {
   const out: string[] = [];
   for await (const entry of glob(pattern, { cwd })) {
+    if (entry.startsWith(".git/") || entry.includes("/.git/") || entry.startsWith("node_modules/") || entry.includes("/node_modules/")) continue;
     if (!(await stat(path.resolve(cwd, entry))).isDirectory()) out.push(entry.split(path.sep).join("/"));
   }
   return out.sort();
@@ -429,6 +430,17 @@ export function createServer(options: ServerOptions = {}): http.Server {
         sendJson(res, 200, tree);
         return;
       }
+      if (pathname === "/api/files") {
+        const manifests = await getManifests();
+        const diskFiles = await filesUnder("**/*", cwd);
+        const fileSet = new Set<string>(diskFiles);
+        for (const m of manifests) {
+          for (const f of m.files) fileSet.add(f);
+        }
+        sendJson(res, 200, { files: Array.from(fileSet).sort() });
+        return;
+      }
+
 
       if (pathname === "/api/matrix") {
         const query: MatrixQuery = {};
@@ -473,26 +485,44 @@ export function createServer(options: ServerOptions = {}): http.Server {
           sendJson(res, 400, { error: "invalid JSON body" });
           return;
         }
-        if (!isRecord(body) || typeof body.ask !== "string" || (body.path !== undefined && typeof body.path !== "string")) {
-          sendJson(res, 400, { error: "body must be {ask: string, path?: string}" });
+        if (!isRecord(body)) {
+          sendJson(res, 400, { error: "body must be an object" });
           return;
         }
-        const rel = body.path ?? "";
+        let asks: string[] = [];
+        if (Array.isArray(body.asks)) asks = body.asks.filter((x): x is string => typeof x === "string");
+        else if (Array.isArray(body.questions)) asks = body.questions.filter((x): x is string => typeof x === "string");
+        else if (Array.isArray(body.ask)) asks = body.ask.filter((x): x is string => typeof x === "string");
+        else if (typeof body.ask === "string") asks = [body.ask];
+
+        if (asks.length === 0) {
+          sendJson(res, 400, { error: "body must specify ask, asks, or questions" });
+          return;
+        }
+
         let files: string[];
-        if (/^https?:\/\//.test(rel)) {
-          files = [rel];
-        } else if (rel === "" || rel === "/" || rel === ".") {
-          files = await filesUnder("**/*", cwd);
+        if (Array.isArray(body.files)) {
+          files = body.files.filter((x): x is string => typeof x === "string");
+        } else if (body.path !== undefined && typeof body.path !== "string") {
+          sendJson(res, 400, { error: "path must be a string" });
+          return;
         } else {
-          const st = await stat(path.resolve(cwd, rel)).catch(() => null);
-          if (!st) {
-            sendJson(res, 400, { error: `no such path: ${rel}` });
-            return;
+          const rel = typeof body.path === "string" ? body.path : "";
+          if (/^https?:\/\//.test(rel)) {
+            files = [rel];
+          } else if (rel === "" || rel === "/" || rel === ".") {
+            files = await filesUnder("**/*", cwd);
+          } else {
+            const st = await stat(path.resolve(cwd, rel)).catch(() => null);
+            if (!st) {
+              sendJson(res, 400, { error: `no such path: ${rel}` });
+              return;
+            }
+            files = st.isDirectory() ? await filesUnder(`${rel.replace(/\/+$/, "")}/**/*`, cwd) : [rel];
           }
-          files = st.isDirectory() ? await filesUnder(`${rel.replace(/\/+$/, "")}/**/*`, cwd) : [rel];
         }
         if (files.length === 0) {
-          sendJson(res, 400, { error: `no files matched under ${rel || "/"}` });
+          sendJson(res, 400, { error: "no files matched" });
           return;
         }
         const key = (await resolveConfig(cwd)).apiKey;
@@ -500,21 +530,33 @@ export function createServer(options: ServerOptions = {}): http.Server {
           sendJson(res, 400, { error: "TYPESAFE_API_KEY is not set — put it in .questions/.env or export it" });
           return;
         }
-        const result = await runAsk({
-          name: body.ask,
-          cwd,
-          argv: [body.ask, ...files.flatMap((f) => ["-f", f])],
-          files,
-          tokens: {},
-          key,
-          fetchImpl: options.fetchImpl,
-        });
-        cacheTimestamp = 0; // the next /api/* request re-reads the just-recorded run
-        options.onRun?.(result);
+        const batch = body.batch === true;
+        const results: RunResult[] = [];
+        for (const askName of asks) {
+          const result = await runAsk({
+            name: askName,
+            cwd,
+            argv: [askName, ...(batch ? ["--batch"] : []), ...files.flatMap((f) => ["-f", f])],
+            files,
+            tokens: {},
+            batch,
+            key,
+            fetchImpl: options.fetchImpl,
+          });
+          cacheTimestamp = 0; // the next /api/* request re-reads the just-recorded run
+          options.onRun?.(result);
+          results.push(result);
+        }
         sendJson(res, 200, {
-          runId: result.manifest.runId,
-          model: result.model,
-          pairs: result.pairs.map((p) => ({ file: p.file, answers: p.response.answers })),
+          runId: results[results.length - 1]!.manifest.runId,
+          model: results[results.length - 1]!.model,
+          pairs: results.flatMap((r) => r.pairs.map((p) => ({ file: p.file, answers: p.response.answers }))),
+          runs: results.map((r) => ({
+            runId: r.manifest.runId,
+            ask: r.manifest.ask,
+            model: r.model,
+            pairs: r.pairs.map((p) => ({ file: p.file, answers: p.response.answers })),
+          })),
         });
         return;
       }

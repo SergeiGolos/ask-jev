@@ -23,6 +23,7 @@ async function fixture(): Promise<string> {
   const cwd = await mkdtemp(path.join(tmpdir(), "aj-serve-run-"));
   await mkdir(path.join(cwd, ".questions"), { recursive: true });
   await writeFile(path.join(cwd, ".questions", "review.md"), ASK);
+  await writeFile(path.join(cwd, ".questions", "second.md"), ASK);
   await writeFile(path.join(cwd, ".questions", ".env"), "TYPESAFE_API_KEY=test-key\n");
   await mkdir(path.join(cwd, "src"), { recursive: true });
   await writeFile(path.join(cwd, "src", "a.ts"), "const a = 1;\n");
@@ -32,7 +33,8 @@ async function fixture(): Promise<string> {
 
 function judgeStub(calls: string[] = []): typeof fetch {
   return (async (_url: unknown, init?: { body?: string }) => {
-    calls.push(JSON.parse(init?.body ?? "{}").state.path);
+    const state = JSON.parse(init?.body ?? "{}").state;
+    calls.push(state.path ?? "batch");
     return Response.json({ model: "jev-1", answers: { severity: { score: 2 } } });
   }) as typeof fetch;
 }
@@ -177,5 +179,36 @@ test("GET /api/runs lists recorded runs and /report renders the run HTML", async
 
     const traversal = await fetch(`${srv.url}/api/runs/..%2F..%2Fetc/report`);
     assert.equal(traversal.status, 404); // regex rejects path separators
+  });
+});
+
+test("GET /api/files lists workspace files", async () => {
+  const cwd = await fixture();
+  await withServer(cwd, async (srv) => {
+    const res = await fetch(`${srv.url}/api/files`);
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { files: string[] };
+    assert.ok(Array.isArray(body.files));
+    assert.deepEqual(body.files, ["src/a.ts", "src/b.ts"]);
+  });
+});
+
+test("POST /api/run with multiple asks and batch flag", async () => {
+  const cwd = await fixture();
+  const batchAsk = ASK.replace("Review {{filename}}:", "Review {{file}}:");
+  await writeFile(path.join(cwd, ".questions", "review.md"), batchAsk);
+  await writeFile(path.join(cwd, ".questions", "second.md"), batchAsk);
+  await withServer(cwd, async (srv, calls) => {
+    const out = await post(
+      srv.url,
+      JSON.stringify({ asks: ["review", "second"], files: ["src/a.ts", "src/b.ts"], batch: true }),
+    );
+    assert.equal(out.status, 200);
+    const json = out.json as { runId: string; runs: { ask: string }[]; pairs: unknown[] };
+    assert.ok(json.runId);
+    assert.equal(json.runs.length, 2);
+    assert.deepEqual(json.runs.map((r) => r.ask), ["review", "second"]);
+    // batch mode: one call per ask with file = "batch"
+    assert.deepEqual(calls, ["batch", "batch"]);
   });
 });

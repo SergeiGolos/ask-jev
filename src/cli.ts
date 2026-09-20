@@ -29,7 +29,7 @@ export async function main(argv: string[]): Promise<number> {
   if (cmd === "show") return cmdShow(rest);
   if (cmd === "report") return cmdReport(rest);
   if (cmd === "serve") return cmdServe(rest);
-  return cmdRun(cmd, rest, config.cwd, config.apiKey);
+  return cmdRun(argv, config.cwd, config.apiKey);
 }
 
 function usage(code: number): number {
@@ -38,7 +38,7 @@ function usage(code: number): number {
 Usage:
   ask list                                         list discovered asks with descriptions (folder ./.questions shadows profile ~/.questions)
   ask new <name>                                   scaffold a new ask
-  ask <question-name> -f <path|glob>...            run an ask, one judge call per file
+  ask <question-name>... -f <path|glob>...         run asks, one judge call per file
         [-t name=value]... [--batch] [--verbose] [--json] [--html]
   ask history [run-id]                             list runs, or one run's pairs
   ask history [run-id] -f <file>                   diff a file's answers vs the prior run
@@ -71,6 +71,7 @@ async function cmdList(): Promise<number> {
 }
 
 export interface RunFlags {
+  questions: string[];
   files: string[];
   tokens: Record<string, string>;
   batch: boolean;
@@ -80,7 +81,7 @@ export interface RunFlags {
 }
 
 export function parseRunArgs(rest: string[]): RunFlags {
-  const flags: RunFlags = { files: [], tokens: {}, batch: false, verbose: false, json: false, html: false };
+  const flags: RunFlags = { questions: [], files: [], tokens: {}, batch: false, verbose: false, json: false, html: false };
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]!;
     const value = (): string => {
@@ -89,17 +90,29 @@ export function parseRunArgs(rest: string[]): RunFlags {
       i++;
       return v;
     };
-    if (a === "-f") flags.files.push(value());
-    else if (a === "-t") {
+    if (a === "-q" || a === "--question") {
+      const val = value();
+      for (const q of val.split(",")) if (q.trim()) flags.questions.push(q.trim());
+    } else if (a === "-f") {
+      flags.files.push(value());
+    } else if (a === "-t") {
       const kv = value();
       const eq = kv.indexOf("=");
       if (eq <= 0) fail(`-t expects name=value, got '${kv}'`);
       flags.tokens[kv.slice(0, eq)] = kv.slice(eq + 1);
-    } else if (a === "--batch") flags.batch = true;
-    else if (a === "--verbose") flags.verbose = true;
-    else if (a === "--json") flags.json = true;
-    else if (a === "--html") flags.html = true;
-    else fail(`unknown argument '${a}'`);
+    } else if (a === "--batch") {
+      flags.batch = true;
+    } else if (a === "--verbose") {
+      flags.verbose = true;
+    } else if (a === "--json") {
+      flags.json = true;
+    } else if (a === "--html") {
+      flags.html = true;
+    } else if (a.startsWith("-")) {
+      fail(`unknown argument '${a}'`);
+    } else {
+      for (const q of a.split(",")) if (q.trim()) flags.questions.push(q.trim());
+    }
   }
   for (const k of Object.keys(flags.tokens))
     if (k in BUILTIN)
@@ -109,7 +122,7 @@ export function parseRunArgs(rest: string[]): RunFlags {
 
 function fail(msg: string): never {
   throw new CliError(
-    `${msg}\n(usage: ask <question-name> -f <path|glob>... [-t name=value]... [--batch] [--verbose] [--json])`,
+    `${msg}\n(usage: ask <question-name>... -f <path|glob>... [-t name=value]... [--batch] [--verbose] [--json])`,
   );
 }
 
@@ -269,35 +282,63 @@ export async function printRunResult(cwd: string, result: RunResult): Promise<vo
   if (table) console.log(table);
 }
 
-async function cmdRun(name: string, rest: string[], cwd: string = process.cwd(), apiKey?: string): Promise<number> {
-  const flags = parseRunArgs(rest);
+async function cmdRun(argv: string[], cwd: string = process.cwd(), apiKey?: string): Promise<number> {
+  const flags = parseRunArgs(argv);
+  if (flags.questions.length === 0) fail("needs at least one question name");
   const key = apiKey ?? process.env.TYPESAFE_API_KEY;
   if (!key) throw new CliError("TYPESAFE_API_KEY is not set — put it in .questions/.env or export it");
-  const result = await runAsk({
-    name,
-    cwd,
-    argv: [name, ...rest],
-    files: flags.files,
-    tokens: flags.tokens,
-    batch: flags.batch,
-    key,
-    log: flags.verbose ? (line) => console.error(line) : undefined,
-  });
-  if (flags.json) {
-    console.log(
-      JSON.stringify(
-        { runId: result.manifest.runId, model: result.model, pairs: result.pairs.map((p) => ({ file: p.file, answers: p.response.answers })) },
-        null,
-        2,
-      ),
-    );
-  } else {
-    await printRunResult(cwd, result);
+  const results: RunResult[] = [];
+  for (const name of flags.questions) {
+    const result = await runAsk({
+      name,
+      cwd,
+      argv,
+      files: flags.files,
+      tokens: flags.tokens,
+      batch: flags.batch,
+      key,
+      log: flags.verbose ? (line) => console.error(line) : undefined,
+    });
+    results.push(result);
   }
-  if (flags.verbose) console.error(`run ${result.manifest.runId} recorded`);
+  if (flags.json) {
+    if (results.length === 1) {
+      const r = results[0]!;
+      console.log(
+        JSON.stringify(
+          { runId: r.manifest.runId, model: r.model, pairs: r.pairs.map((p) => ({ file: p.file, answers: p.response.answers })) },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.log(
+        JSON.stringify(
+          results.map((r) => ({
+            runId: r.manifest.runId,
+            ask: r.manifest.ask,
+            model: r.model,
+            pairs: r.pairs.map((p) => ({ file: p.file, answers: p.response.answers })),
+          })),
+          null,
+          2,
+        ),
+      );
+    }
+  } else {
+    for (let i = 0; i < results.length; i++) {
+      if (i > 0) console.log();
+      await printRunResult(cwd, results[i]!);
+    }
+  }
+  if (flags.verbose) {
+    for (const r of results) console.error(`run ${r.manifest.runId} recorded`);
+  }
   if (flags.html) {
-    const report = await writeReport(cwd, result.manifest.runId, getRunReportPath(cwd, result.manifest.runId));
-    if (flags.verbose) console.error(`[report] ${report}`);
+    for (const r of results) {
+      const report = await writeReport(cwd, r.manifest.runId, getRunReportPath(cwd, r.manifest.runId));
+      if (flags.verbose) console.error(`[report] ${report}`);
+    }
   }
   return 0;
 }

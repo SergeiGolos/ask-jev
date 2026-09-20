@@ -54,19 +54,19 @@ ask new <name> [--force]
 
 ---
 
-### 3. `ask <question-name> -f <path|glob>... [options]`
+### 3. `ask <question-name>... -f <path|glob>... [options]`
 
-Executes an ask against one or more target files.
+Executes one or more asks against target files.
 
 ```bash
-ask <question-name> -f <path|glob>... [-t name=value]... [--batch] [--verbose] [--json] [--html]
+ask <question-name>... -f <path|glob>... [-t name=value]... [--batch] [--verbose] [--json] [--html]
 ```
 
 #### Arguments & Flags
 
 | Flag / Option | Description |
 |---|---|
-| `<question-name>` | The name of the ask to execute (resolves `<name>.md` from `./.questions` then `~/.questions`). |
+| `<question-name>...` / `-q <name>` | The name(s) of the ask(s) to execute (resolves `<name>.md` from `./.questions` then `~/.questions`). Multiple questions can be entered positionally, comma-separated, or with repeatable `-q`. |
 | `-f <path\|glob>` | Target file or glob pattern. Can be passed multiple times (e.g. `-f file1.ts -f file2.ts` or `-f 'src/**/*.ts'`). Required if the ask prompt references `{{file}}`, `{{filename}}`, or `{{content}}`. |
 | `-t name=value` | Overrides or provides a custom token value for `{{name}}`. Can be specified multiple times. Cannot override built-in tokens (`{{file}}`, `{{filename}}`, `{{content}}`). |
 | `--batch` | Runs all matched files through a single judge call instead of sequential per-file calls. |

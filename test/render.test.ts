@@ -224,6 +224,18 @@ test("parseRunArgs: repeatable -f, -t k=v, boolean flags", () => {
   assert.equal(flags.json, true);
 });
 
+test("parseRunArgs: captures multiple questions positionally, via -q, and comma-separated", () => {
+  const p1 = parseRunArgs(["q1", "q2", "-f", "a"]);
+  assert.deepEqual(p1.questions, ["q1", "q2"]);
+  assert.deepEqual(p1.files, ["a"]);
+
+  const p2 = parseRunArgs(["-q", "q1", "-q", "q2", "-f", "a"]);
+  assert.deepEqual(p2.questions, ["q1", "q2"]);
+
+  const p3 = parseRunArgs(["q1,q2", "-f", "a"]);
+  assert.deepEqual(p3.questions, ["q1", "q2"]);
+});
+
 test("parseRunArgs rejects: missing value, malformed -t, reserved token, unknown flag", () => {
   assert.throws(() => parseRunArgs(["-f"]), /'-f' needs a value/);
   assert.throws(() => parseRunArgs(["-t", "novalue"]), /-t expects name=value/);
