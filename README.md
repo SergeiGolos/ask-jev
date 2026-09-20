@@ -6,13 +6,12 @@
 
 ## What it does
 
-Most code analysis tools give you static errors or warnings. `ask-jev` lets you ask subjective or qualitative questions about your files—like "Is this function doing too much?", "Are these error messages helpful?", or "Does this module follow our naming conventions?"
+Most code analysis tools check static rules. `ask-jev` evaluates qualitative questions: "Is this function doing too much?", "Are these error messages helpful?", or "Does this module follow our naming conventions?"
 
-- **Ask questions about your files**: Define questions in simple Markdown files and run them against any file or folder.
-- **Track code evolution**: Every run is saved. See whether scores improve or regress as code changes.
-- **Search across runs, questions, and files**: Search past runs, inspect specific files, or find questions and their answers.
-- **Detailed execution details**: Inspect the exact prompt sent to the judge and the full response for every file.
-- **Trend dashboard**: Explore interactive trend screens to track scores, deltas, and changes across files and directories over time.
+- Define questions in Markdown and evaluate any file or directory.
+- Track score regressions and improvements across revisions.
+- Audit runs with the exact prompt and raw model response for each file.
+- Inspect trends, score deltas, and sparklines in the terminal or web dashboard.
 
 ---
 
@@ -36,22 +35,20 @@ Most code analysis tools give you static errors or warnings. `ask-jev` lets you 
    (Search runs, inspect files, and track scores)
 ```
 
-1. **Questions (`.questions/<name>.md`)**: You write questions in Markdown with instructions and scoring criteria.
-2. **Runs & History (`.questions/history/<run-id>/`)**: Every run saves the exact prompt, raw judge response, and scores. This creates an audit log of how each file was judged.
-3. **Inspection & Trends**:
-   - **Terminal output**: Instant scores and deltas compared to prior runs.
-   - **Interactive HTML reports**: Detailed per-file results with prompt and response details.
-   - **Web dashboard (`ask serve`)**: Search runs, filter by questions or files, and view trend matrices with score deltas over time.
+1. **Questions**: Authored in `.questions/<name>.md` with instructions and scoring criteria.
+2. **Runs & history**: Saved to `.questions/history/<run-id>/` with the prompt, raw model response, and score manifest.
+3. **Inspection & trends**:
+   - Terminal: live scores with deltas against prior runs.
+   - HTML reports: standalone reports with expandable prompts and responses (`--html`).
+   - Web dashboard (`ask serve`): trend matrices, sparklines, and run search.
 
 ---
 
 ## Getting Started
 
-Follow these steps to set up `ask-jev`, ask your first question about a file, and view the results.
+Node.js 24 or newer and a TypeSafe API key are required.
 
 ### 1. Install and set your API key
-
-You need Node.js 24 or newer and a TypeSafe API key.
 
 1. Register for an API key at [TypeSafe](https://typesafe.ai) (or view the [TypeSafe Documentation](https://docs.typesafe.ai)).
 2. Install the CLI globally:
@@ -124,7 +121,7 @@ ask code-review -f 'src/**/*.ts'
 
 The terminal shows scores for each file. If you have run this question before, it also shows whether the score went up or down.
 
-### 4. View detailed execution details
+### 4. Inspect run details
 
 Generate an interactive HTML report to inspect the exact prompt and response:
 
@@ -150,32 +147,31 @@ Launch the local web dashboard:
 ask serve
 ```
 
-Open `http://localhost:3000` in your browser. From the dashboard, you can:
-- **Search files and folders**: Filter the file tree to see how specific components score.
-- **Track trends**: View score changes over time with color-coded deltas and sparklines.
-- **Browse runs**: Search past runs, inspect execution details, and view full reports.
-- **Manage questions**: Edit questions and schemas directly in the browser.
+Open `http://localhost:3000` in your browser to:
+- Filter the file tree to inspect component scores.
+- Track score changes over time with color-coded deltas and sparklines.
+- Search past runs and audit prompt-response pairs.
+- Edit questions and schemas directly in the browser.
 
 ---
 
 ## Core Features
 
-- **Markdown-first questions**: Write questions in Markdown with YAML front matter and scoring schemas.
-- **Dynamic tool blocks**: Run shell commands (such as `git diff` or `git log`) before judging and insert their output into the prompt.
-- **Flexible question types**:
-  - `score`: Numeric ratings across defined criteria levels (for example, 0 to 3).
-  - `choice`: Categorical classifications mapped to option rubrics.
+- **Markdown questions**: Authored with YAML front matter and scoring schemas.
+- **Shell tool blocks**: Fenced ```shell blocks run local commands (e.g. `git diff`) and inline stdout into the prompt before judging.
+- **Three question types**:
+  - `score`: Ordinal ratings across defined criteria levels (e.g. 0 to 3).
+  - `choice`: Categorical selection mapped to rubrics.
   - `noul`: Binary true/false checks with confidence ratings.
-  - `direction: low`: Marks lower-is-better metrics (like bug severity or code smells) so lower scores display in green instead of red.
-- **Per-file or batch evaluation**:
-  - **Per-file** (default): Scores each file individually so you can see file-level changes.
-  - **Batch** (`--batch`): Combines files into one judge call to review relationships across files and reduce API usage.
-- **Project and profile questions**:
-  - Save project-specific questions in `./.questions/<name>.md`.
-  - Save shared personal questions in `~/.questions/<name>.md`. Local questions take precedence over personal ones.
-- **Complete run history**: Every run saves the exact prompt, reference schema, and raw model output under `.questions/history/<runId>/`.
-- **Interactive HTML reports**: View self-contained HTML reports with score summaries and expandable prompt/response details.
-- **Trend dashboard**: A web interface (`ask serve`) that plots questions against runs, showing score deltas, sparkline trends, and directory rollups.
+  - `direction: low`: Inverts display tone so lower scores render green and higher scores red.
+- **Evaluation modes**:
+  - Per-file (default): Evaluates each file individually to surface per-file deltas.
+  - Batch (`--batch`): Combines files into one judge call to evaluate cross-file relationships and save tokens.
+- **Layered question resolution**:
+  - Local questions in `./.questions/<name>.md`.
+  - Shared personal questions in `~/.questions/<name>.md`. Local questions shadow profile questions.
+- **Audit trail**: Every run records the rendered prompt, schema, and raw model output under `.questions/history/<runId>/`.
+- **Trend dashboard**: `ask serve` plots questions against runs, displaying score deltas, sparklines, and directory rollups.
 ---
 
 ## CLI Commands

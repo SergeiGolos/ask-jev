@@ -1,24 +1,24 @@
-# Web UI — Views, Routes, and Components
+# Web UI: Views, Routes, and Components
 
 Working reference for restructuring the display layer. Describes the **target route scheme**
 (agreed 2026-09-20) and, per route, what the left navigation renders and from which data, the
 main-content components, and how they compose. Content is annotated:
 
-- **[today]** — traced from current code (`src/web/index.html`, `app.js`, `serve.ts`).
-- **➕ filled** — new/changed behavior specified by the route update, inferred from the
+- **[today]**: traced from current code (`src/web/index.html`, `app.js`, `serve.ts`).
+- **➕ filled**: new/changed behavior specified by the route update, inferred from the
   route description and sibling views. Spec, not yet code.
 
 Source of truth: `src/web/index.html`, `src/web/app.js`, `src/web/style.css`, served by
-`src/serve.ts`. No framework, no build step — one ES module plus a static shell today.
+`src/serve.ts`. No framework, no build step: one ES module plus a static shell today.
 
 ## Alignment
 
-Fill in the **Proposed** column to align this document with the intended restructure — empty
-means undecided. **Current** bullets describe today's behavior as generic concepts (details
+Fill in the **Proposed** column to align this document with the intended restructure (empty
+means undecided). **Current** bullets describe today's behavior as generic concepts (details
 live in §4).
 
-Notation: `[…]` marks an optional part, and every optional path part is written
-`/p/<path>` — `/p/` is the reserved prefix that ends the preceding segment, so `<name>`
+Notation: `[…]` marks an optional part. Every optional path part is written
+`/p/<path>`. `/p/` is the reserved prefix that ends the preceding segment, so `<name>`
 values containing `/` stay parseable. Each optional route gets **one row per shape** (bare
 and `/p/`-present) so the two can be aligned independently. Once filled, the §4 sections
 update to match.

@@ -1,6 +1,6 @@
 # CLI Reference: `ask`
 
-`ask` runs hand-authored question configurations against files, evaluated by TypeSafe System One (Jev). Every run is captured as a timestamped, auditable record under `.questions/history/`.
+`ask` runs hand-authored questions against files, evaluated by TypeSafe System One (Jev). It records every run under `.questions/history/`.
 
 ---
 
@@ -189,12 +189,12 @@ ask serve [path] [--port 3000] [--watch]
 - Score delta badges and sparkline trends.
 - Filtering by ask name and timestamp ranges (`from` / `to`).
 - Polls for newly recorded runs every 30 s and refreshes the view when history changed (paused while the tab is hidden).
-- **Run** control (top right): runs the selected ask against the current tree target — file, folder (recursive), or the whole tree — and records it like a CLI run.
-- **Runs** tab: lists recorded run instances grouped by ask file (newest first); selecting a run embeds its full report with the three-level Result / Extended / Verbose inspection.
-- Hash routes with browser back/forward: `#/trends/<path>`, `#/runs/<runId>`, `#/questions/<name>` — every tab switch, tree selection, and cross-reference is a shareable deep link (matrix columns link to runs, ask names link to questions, run groups link back to questions).
+- **Run** control (top right): runs the selected ask against the current tree target (file, recursive folder, or full tree) and records it like a CLI run.
+- **Runs** tab: lists recorded run instances grouped by ask file (newest first); selecting a run embeds its full report with three-level Result / Extended / Verbose inspection.
+- Hash routes with browser history (`#/trends/<path>`, `#/runs/<runId>`, `#/questions/<name>`): every tab switch, tree selection, and cross-reference forms a shareable deep link.
 - Direct JSON endpoints:
   - `GET /api/tree?ask=<name>&from=<iso>&to=<iso>`
   - `GET /api/matrix?path=<file-or-dir>&ask=<name>&from=<iso>&to=<iso>`
-  - `GET /api/runs` — chronological run summaries `{runId, timestamp, asks, models, pairCount}`.
-  - `GET /api/runs/<runId>/report` — the run's standalone HTML report.
-  - `POST /api/run` — body `{ask|asks, path|files, batch}`; judges synchronously as one grouped run and returns `{runId, asks, pairs}`.
+  - `GET /api/runs`: chronological run summaries `{runId, timestamp, asks, models, pairCount}`.
+  - `GET /api/runs/<runId>/report`: the run's standalone HTML report.
+  - `POST /api/run`: body `{ask|asks, path|files, batch}`; judges synchronously as one grouped run and returns `{runId, asks, pairs}`.
