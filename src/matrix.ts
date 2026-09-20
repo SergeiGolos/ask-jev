@@ -380,6 +380,9 @@ export async function buildMatrixData(
 
   questionsResult.sort((a, b) => a.id.localeCompare(b.id));
 
+  // Columns render newest-first; deltas above were computed oldest→newest and stay attached to their cells.
+  matchingRuns.reverse();
+
   return {
     path: targetPath,
     isFolder,

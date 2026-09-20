@@ -164,6 +164,9 @@ ask serve [path] [--port 3000]
 - Matrix grid plotting question criteria against chronological run executions.
 - Score delta badges and sparkline trends.
 - Filtering by ask name and timestamp ranges (`from` / `to`).
+- Polls for newly recorded runs every 30 s and refreshes the view when history changed (paused while the tab is hidden).
+- **Run** control (top right): runs the selected ask against the current tree target — file, folder (recursive), or the whole tree — and records it like a CLI run.
 - Direct JSON endpoints:
   - `GET /api/tree?ask=<name>&from=<iso>&to=<iso>`
   - `GET /api/matrix?path=<file-or-dir>&ask=<name>&from=<iso>&to=<iso>`
+  - `POST /api/run` — body `{ask, path}`; judges synchronously and returns `{runId, model, pairs}`.

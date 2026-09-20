@@ -319,6 +319,40 @@ body {
   background: var(--inset);
 }
 
+.run-group {
+  min-width: 0;
+}
+
+.run-inputs {
+  display: flex;
+  gap: 6px;
+}
+
+.run-inputs select {
+  min-width: 0;
+}
+
+.btn-run {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent-subtle);
+  color: var(--fg);
+  font: 12px/1.4 var(--font);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-run:hover {
+  background: var(--accent);
+}
+
+.btn-run:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Matrix Table */
 .matrix-wrapper {
   flex: 1;
@@ -500,3 +534,11 @@ body {
 
 .tooltip-row .k { color: var(--muted); }
 .tooltip-row .v { font-family: var(--mono); font-weight: 600; }
+
+.tooltip-graph { display: block; margin-top: 6px; }
+.tooltip-graph polyline { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+.tooltip-graph circle { fill: var(--accent); }
+.tooltip-graph text { font-size: 8px; fill: var(--muted); font-family: var(--mono); }
+.tooltip-graph-empty { color: var(--muted); margin-top: 4px; }
+
+.trend-table tbody th[data-graph] { cursor: help; }

@@ -1,9 +1,12 @@
 import http from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { glob, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveConfig } from "./config.ts";
+import { isRecord } from "./guards.ts";
 import { buildMatrixData, buildTreeData, loadAllManifests, type MatrixQuery } from "./matrix.ts";
 import { historyDir as getHistoryDir, type RunManifest } from "./history.ts";
+import { runAsk } from "./run.ts";
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -20,6 +23,8 @@ export interface ServerOptions {
   port?: number;
   host?: string;
   initialManifests?: RunManifest[];
+  /** Judge transport seam for /api/run; tests inject a stub. */
+  fetchImpl?: typeof fetch;
 }
 
 export interface RunningServer {
@@ -29,7 +34,16 @@ export interface RunningServer {
   close: () => Promise<void>;
 }
 
-export function createServer(options: { cwd?: string; initialManifests?: RunManifest[] } = {}): http.Server {
+/** All files matching a glob under cwd, directories skipped, sorted (expandInputs rejects dirs). */
+async function filesUnder(pattern: string, cwd: string): Promise<string[]> {
+  const out: string[] = [];
+  for await (const entry of glob(pattern, { cwd })) {
+    if (!(await stat(path.resolve(cwd, entry))).isDirectory()) out.push(entry.split(path.sep).join("/"));
+  }
+  return out.sort();
+}
+
+export function createServer(options: ServerOptions = {}): http.Server {
   const cwd = options.cwd ?? process.cwd();
   const historyDir = getHistoryDir(cwd);
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -60,7 +74,7 @@ export function createServer(options: { cwd?: string; initialManifests?: RunMani
 
   return http.createServer(async (req, res) => {
     try {
-      if (req.method !== "GET" && req.method !== "HEAD") {
+      if (req.method !== "GET" && req.method !== "HEAD" && !(req.method === "POST" && req.url?.startsWith("/api/run"))) {
         sendJson(res, 405, { error: "Method not allowed" });
         return;
       }
@@ -102,6 +116,65 @@ export function createServer(options: { cwd?: string; initialManifests?: RunMani
         const manifests = await getManifests();
         const matrix = await buildMatrixData(historyDir, manifests, query);
         sendJson(res, 200, matrix);
+        return;
+      }
+
+      if (pathname === "/api/run") {
+        if (req.method !== "POST") {
+          sendJson(res, 405, { error: "Method not allowed" });
+          return;
+        }
+        let raw = "";
+        for await (const chunk of req) raw += chunk;
+        let body: unknown;
+        try {
+          body = JSON.parse(raw);
+        } catch {
+          sendJson(res, 400, { error: "invalid JSON body" });
+          return;
+        }
+        if (!isRecord(body) || typeof body.ask !== "string" || (body.path !== undefined && typeof body.path !== "string")) {
+          sendJson(res, 400, { error: "body must be {ask: string, path?: string}" });
+          return;
+        }
+        const rel = body.path ?? "";
+        let files: string[];
+        if (/^https?:\/\//.test(rel)) {
+          files = [rel];
+        } else if (rel === "" || rel === "/" || rel === ".") {
+          files = await filesUnder("**/*", cwd);
+        } else {
+          const st = await stat(path.resolve(cwd, rel)).catch(() => null);
+          if (!st) {
+            sendJson(res, 400, { error: `no such path: ${rel}` });
+            return;
+          }
+          files = st.isDirectory() ? await filesUnder(`${rel.replace(/\/+$/, "")}/**/*`, cwd) : [rel];
+        }
+        if (files.length === 0) {
+          sendJson(res, 400, { error: `no files matched under ${rel || "/"}` });
+          return;
+        }
+        const key = (await resolveConfig(cwd)).apiKey;
+        if (!key) {
+          sendJson(res, 400, { error: "TYPESAFE_API_KEY is not set — put it in .questions/.env or export it" });
+          return;
+        }
+        const result = await runAsk({
+          name: body.ask,
+          cwd,
+          argv: [body.ask, ...files.flatMap((f) => ["-f", f])],
+          files,
+          tokens: {},
+          key,
+          fetchImpl: options.fetchImpl,
+        });
+        cacheTimestamp = 0; // the next /api/* request re-reads the just-recorded run
+        sendJson(res, 200, {
+          runId: result.manifest.runId,
+          model: result.model,
+          pairs: result.pairs.map((p) => ({ file: p.file, answers: p.response.answers })),
+        });
         return;
       }
 
@@ -158,7 +231,7 @@ export async function startServer(options: ServerOptions = {}): Promise<RunningS
   const cwd = options.cwd ?? process.cwd();
   const historyDir = getHistoryDir(cwd);
   const initialManifests = options.initialManifests ?? (await loadAllManifests(historyDir));
-  const server = createServer({ cwd, initialManifests });
+  const server = createServer({ cwd, initialManifests, fetchImpl: options.fetchImpl });
   const host = options.host || "127.0.0.1";
   const preferredPort = options.port ?? 3000;
 

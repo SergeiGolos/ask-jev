@@ -111,6 +111,7 @@ function selectNode(path, isFolder) {
 
 function populateFilters() {
   const askSel = $("askSelect");
+  const prevAsk = askSel.value;
   askSel.innerHTML = `<option value="">All Asks</option>`;
   for (const ask of treeData.availableAsks || []) {
     const opt = document.createElement("option");
@@ -118,8 +119,10 @@ function populateFilters() {
     opt.textContent = ask;
     askSel.appendChild(opt);
   }
+  askSel.value = prevAsk; // keep the user's filter across auto-refreshes
 
   const qSel = $("questionSelect");
+  const prevQ = qSel.value;
   qSel.innerHTML = `<option value="">All Questions</option>`;
   for (const q of treeData.availableQuestions || []) {
     const opt = document.createElement("option");
@@ -127,6 +130,18 @@ function populateFilters() {
     opt.textContent = q;
     qSel.appendChild(opt);
   }
+  qSel.value = prevQ;
+
+  const runSel = $("runAskSelect");
+  const prevRun = runSel.value;
+  runSel.innerHTML = "";
+  for (const ask of treeData.availableAsks || []) {
+    const opt = document.createElement("option");
+    opt.value = ask;
+    opt.textContent = ask;
+    runSel.appendChild(opt);
+  }
+  if (prevRun) runSel.value = prevRun;
 
   if (treeData.timeRange) {
     // Optionally set min/max
@@ -169,6 +184,7 @@ async function loadMatrix() {
 }
 
 function renderMatrix(data) {
+  tooltip.style.display = "none";
   const thead = $("matrixHead");
   const tbody = $("matrixBody");
   thead.innerHTML = "";
@@ -217,6 +233,15 @@ function renderMatrix(data) {
     const qTh = document.createElement("th");
     qTh.textContent = q.id;
     qTh.title = q.id;
+    // Series for the hover graph, oldest→newest (chart time axis runs left→right, unlike the table).
+    const points = [];
+    for (let i = data.runs.length - 1; i >= 0; i--) {
+      const c = q.cells[data.runs[i].runId];
+      if (c && c.value !== null && c.value !== undefined) {
+        points.push({ t: data.runs[i].timestamp, v: c.value });
+      }
+    }
+    qTh.setAttribute("data-graph", JSON.stringify({ question: q.id, points }));
     row.appendChild(qTh);
 
     for (let i = 0; i < data.runs.length; i++) {
@@ -238,7 +263,7 @@ function renderMatrix(data) {
           deltaHtml = `<span class="delta-badge changed">changed</span>`;
         }
 
-        const prevRun = i > 0 ? data.runs[i - 1] : null;
+        const prevRun = i < data.runs.length - 1 ? data.runs[i + 1] : null; // older run is one column right
         const diffUrl = cell.changed && prevRun?.sha && r.sha && r.repo
           ? `${r.repo}/compare/${prevRun.sha}...${r.sha}`
           : null;
@@ -277,8 +302,39 @@ function renderMatrix(data) {
   }
 }
 
+function sparklineSvg(points) {
+  const W = 260, H = 80, P = 12;
+  if (points.length === 0) return `<div class="tooltip-graph-empty">no numeric history</div>`;
+  const vals = points.map((p) => p.v);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const span = max - min || 1;
+  const x = (i) => (points.length === 1 ? W / 2 : P + (i / (points.length - 1)) * (W - 2 * P));
+  const y = (v) => H - P - ((v - min) / span) * (H - 2 * P);
+  const dots = points
+    .map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="2.5"><title>${formatIsoLocal(p.t)} — ${p.v}</title></circle>`)
+    .join("");
+  const line = points.length > 1
+    ? `<polyline points="${points.map((p, i) => `${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ")}"/>`
+    : "";
+  return `<svg class="tooltip-graph" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><text x="${P}" y="9">${max}</text><text x="${P}" y="${H - 2}">${min}</text>${line}${dots}</svg>`;
+}
+
 // Tooltip handler
 document.addEventListener("mouseover", (e) => {
+  const qTh = e.target.closest("th[data-graph]");
+  if (qTh) {
+    try {
+      const info = JSON.parse(qTh.getAttribute("data-graph"));
+      tooltip.innerHTML = `
+        <div class="tooltip-title">${info.question}</div>
+        ${sparklineSvg(info.points)}
+      `;
+      tooltip.style.display = "block";
+    } catch {}
+    return;
+  }
+
   const td = e.target.closest("td[data-tooltip]");
   if (!td) {
     tooltip.style.display = "none";
@@ -310,7 +366,7 @@ document.addEventListener("mousemove", (e) => {
 });
 
 document.addEventListener("mouseout", (e) => {
-  if (!e.relatedTarget || !e.relatedTarget.closest("td[data-tooltip]")) {
+  if (!e.relatedTarget || !e.relatedTarget.closest("td[data-tooltip], th[data-graph]")) {
     tooltip.style.display = "none";
   }
 });
@@ -362,13 +418,54 @@ $("btnReset").addEventListener("click", () => {
   loadMatrix();
 });
 
+// Run the selected ask against the current tree target.
+$("btnRun").addEventListener("click", async () => {
+  const ask = $("runAskSelect").value;
+  const status = $("matrixStatus");
+  if (!ask) {
+    status.style.display = "block";
+    status.textContent = "No asks available — create one with `ask new <name>`.";
+    return;
+  }
+  const btn = $("btnRun");
+  btn.disabled = true;
+  status.style.display = "block";
+  status.textContent = `Running '${ask}' on ${currentPath || "/ (All Files)"} …`;
+  try {
+    const res = await fetch("/api/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ask, path: currentPath }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    const out = await res.json();
+    await refreshAll(true);
+    status.textContent = `Run ${out.runId.slice(0, 8)} recorded (${out.pairs.length} pair${out.pairs.length === 1 ? "" : "s"})`;
+  } catch (err) {
+    status.textContent = `Run failed: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+/** Fetch fresh tree data; re-render tree + filters + matrix when it changed (or force is set). */
+async function refreshAll(force = false) {
+  const fresh = await fetchJson("/api/tree");
+  if (!force && JSON.stringify(fresh) === JSON.stringify(treeData)) return false;
+  treeData = fresh;
+  renderTree();
+  populateFilters();
+  await loadMatrix();
+  return true;
+}
+
 // Initialize
 async function init() {
   try {
-    treeData = await fetchJson("/api/tree");
-    renderTree();
-    populateFilters();
-    await loadMatrix();
+    await refreshAll(true);
   } catch (err) {
     $("matrixStatus").style.display = "block";
     $("matrixStatus").textContent = `Failed to initialize: ${err.message}`;
@@ -376,3 +473,11 @@ async function init() {
 }
 
 init();
+
+// Poll for newly recorded runs; refresh the view when history changed.
+setInterval(async () => {
+  if (document.hidden || !treeData) return;
+  try {
+    await refreshAll();
+  } catch {}
+}, 30000);

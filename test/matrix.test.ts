@@ -123,7 +123,7 @@ test("githubRepoUrl and run-column git stamp passthrough", async () => {
     {},
   );
   assert.equal(res.runs.length, 2);
-  assert.equal(res.runs[0]!.sha, undefined); // unstamped run stays link-less
-  assert.equal(res.runs[1]!.sha, "c".repeat(40));
-  assert.equal(res.runs[1]!.repo, "https://github.com/owner/repo");
+  assert.equal(res.runs[0]!.sha, "c".repeat(40)); // newest run is the first column
+  assert.equal(res.runs[0]!.repo, "https://github.com/owner/repo");
+  assert.equal(res.runs[1]!.sha, undefined); // unstamped run stays link-less
 });
