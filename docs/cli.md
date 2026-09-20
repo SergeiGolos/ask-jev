@@ -1,13 +1,13 @@
-# CLI Reference: `ask-jev`
+# CLI Reference: `ask`
 
-`ask-jev` runs hand-authored question configurations against files, evaluated by TypeSafe System One (Jev). Every run is captured as a timestamped, auditable record under `.questions/history/`.
+`ask` runs hand-authored question configurations against files, evaluated by TypeSafe System One (Jev). Every run is captured as a timestamped, auditable record under `.questions/history/`.
 
 ---
 
 ## Global Options & Usage
 
 ```bash
-ask-jev <command> [options]
+ask <command> [options]
 ```
 
 When invoked with no arguments, `-h`, or `--help`, the CLI prints general usage instructions.
@@ -24,12 +24,12 @@ When invoked with no arguments, `-h`, or `--help`, the CLI prints general usage 
 
 ## Commands
 
-### 1. `ask-jev list`
+### 1. `ask list`
 
 Lists all asks discovered in the profile directory and the current project folder.
 
 ```bash
-ask-jev list
+ask list
 ```
 
 - **Lookup directories**:
@@ -40,12 +40,12 @@ ask-jev list
 
 ---
 
-### 2. `ask-jev new <name> [--force]`
+### 2. `ask new <name> [--force]`
 
 Scaffolds a new ask markdown template in the local project's `.questions/` directory.
 
 ```bash
-ask-jev new <name> [--force]
+ask new <name> [--force]
 ```
 
 #### Arguments
@@ -54,12 +54,12 @@ ask-jev new <name> [--force]
 
 ---
 
-### 3. `ask-jev <question-name> -f <path|glob>... [options]`
+### 3. `ask <question-name> -f <path|glob>... [options]`
 
 Executes an ask against one or more target files.
 
 ```bash
-ask-jev <question-name> -f <path|glob>... [-t name=value]... [--batch] [--verbose] [--json] [--html]
+ask <question-name> -f <path|glob>... [-t name=value]... [--batch] [--verbose] [--json] [--html]
 ```
 
 #### Arguments & Flags
@@ -74,6 +74,9 @@ ask-jev <question-name> -f <path|glob>... [-t name=value]... [--batch] [--verbos
 | `--json` | Outputs JSON result payload (`{ runId, pairs: [...] }`) to `stdout` for programmatic scripting. |
 | `--html` | Automatically writes a standalone interactive HTML report to `.questions/history/<runId>/report.html`. |
 
+#### Run output
+The default per-file table appends a diff against each file's previous run of the same ask: `(+1)` / `(-2)` / `(=)` for numeric scores and choices, `(was: <previous>)` for relabeled choices. Files never evaluated before print no diff.
+
 #### Globbing & File Resolution Rules
 - Glob patterns are expanded, deduplicated, and sorted within each pattern.
 - Directories are rejected directly (use glob syntax like `dir/**/*`).
@@ -82,12 +85,12 @@ ask-jev <question-name> -f <path|glob>... [-t name=value]... [--batch] [--verbos
 
 ---
 
-### 4. `ask-jev history [run-id]`
+### 4. `ask history [run-id]`
 
 Inspects recorded run history stored in `.questions/history/`.
 
 ```bash
-ask-jev history [run-id]
+ask history [run-id]
 ```
 
 #### Modes
@@ -97,15 +100,31 @@ ask-jev history [run-id]
   - `ASK`: The ask name.
   - `PAIRS`: Total count of judged file pairs in the run.
 - **With `run-id`**: Displays the full manifest for a specific run. Accepts full UUIDv7 or unique leading prefix (e.g. first 8 characters).
+- **With `-f <file>`** (`ask-jev history [run-id] -f <file>`): Prints a diff of the file's answers between the selected run (default: the latest run that evaluated the file) and the most recent earlier run of the same ask covering that file. Numeric scores and choices show deltas (`(+1)`, `(-2)`, `(=)`); relabeled choices show `(was: <previous>)`. Errors when no run recorded the file, or when the given run did not evaluate it.
 
 ---
 
-### 5. `ask-jev show <run-id> [pair]`
+### 5. `ask clean [--force]`
+
+Deletes all recorded runs by removing `.questions/history/`. The directory is recreated on the next run.
+
+```bash
+ask clean [--force]
+```
+
+#### Behavior
+- Without `--force`: lists how many runs would be deleted and exits with an error — nothing is removed.
+- With `--force`: removes the history directory and all recorded runs, reports the deleted count.
+- With no recorded runs: prints `no runs recorded yet` and exits 0 (no `--force` needed).
+
+---
+
+### 6. `ask show <run-id> [pair]`
 
 Prints the verbatim markdown request and JSON response recorded for a specific file pair within a run.
 
 ```bash
-ask-jev show <run-id> [pair]
+ask show <run-id> [pair]
 ```
 
 #### Arguments
@@ -114,12 +133,12 @@ ask-jev show <run-id> [pair]
 
 ---
 
-### 6. `ask-jev report [run-id] [-o file]`
+### 7. `ask report [run-id] [-o file]`
 
 Generates a self-contained interactive HTML report for a past run.
 
 ```bash
-ask-jev report [run-id] [-o file]
+ask report [run-id] [-o file]
 ```
 
 #### Options
@@ -128,12 +147,12 @@ ask-jev report [run-id] [-o file]
 
 ---
 
-### 7. `ask-jev serve [path] [--port <n>]`
+### 8. `ask serve [path] [--port <n>]`
 
 Starts a local HTTP server hosting the Trend Matrix web dashboard over recorded history.
 
 ```bash
-ask-jev serve [path] [--port 3000]
+ask serve [path] [--port 3000]
 ```
 
 #### Options

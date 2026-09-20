@@ -31,7 +31,7 @@ export function splitFrontMatter(text: string): FrontMatter {
   return { data: data ?? {}, body: lines.slice(close + 1).join("\n") };
 }
 
-/** Validate the front-matter keys ask-jev understands; unknown keys pass through untouched. */
+/** Validate the front-matter keys ask understands; unknown keys pass through untouched. */
 export function readAskMeta(data: Record<string, unknown>, source = "ask file"): AskMeta {
   const meta: AskMeta = {};
   if (data.model !== undefined) {
@@ -58,10 +58,10 @@ export function readAskMeta(data: Record<string, unknown>, source = "ask file"):
   return meta;
 }
 
-/** Scaffold for `ask-jev new` — valid per the locked ask anatomy, renders without prompting. */
+/** Scaffold for `ask new` — valid per the locked ask anatomy, renders without prompting. */
 export function newAskTemplate(name: string): string {
   return `---
-# One line naming the question this ask answers; ask-jev list shows it. Update it if you repurpose the ask.
+# One line naming the question this ask answers; ask list shows it. Update it if you repurpose the ask.
 description: "Review one file for general code quality"
 # Judge model. Args are token defaults; -t name=value overrides them at run time.
 model: jev-latest

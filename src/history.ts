@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 import { isRecord } from "./guards.ts";
@@ -165,6 +165,13 @@ export async function listRuns(cwd: string): Promise<RunSummary[]> {
   return runs.sort((a, b) => (a.runId < b.runId ? -1 : 1));
 }
 
+/** Delete every recorded run by removing the history directory (recreated on the next run). Returns the run count removed. */
+export async function cleanRuns(cwd: string): Promise<number> {
+  const runs = await listRuns(cwd);
+  await rm(historyDir(cwd), { recursive: true, force: true });
+  return runs.length;
+}
+
 /** The newest recorded run; errors when nothing is recorded yet. */
 export async function latestRun(cwd: string): Promise<{ manifest: RunManifest; dir: string }> {
   const runs = await listRuns(cwd);
@@ -195,6 +202,53 @@ export async function readPair(dir: string, pair: PairRecord): Promise<{ request
     request: await readFile(path.join(dir, pair.request), "utf8"),
     response: JSON.parse(await readFile(path.join(dir, pair.response), "utf8")),
   };
+}
+
+/**
+ * Find the latest run (before `beforeRunId` if specified, or latest)
+ * for a given ask name (or any ask if not specified) that evaluated `file`.
+ */
+export async function findPreviousRunForFile(
+  cwd: string,
+  file: string,
+  options: { ask?: string; beforeRunId?: string } = {},
+): Promise<{ manifest: RunManifest; pair: PairRecord; dir: string } | undefined> {
+  const manifests = await loadAllManifests(cwd);
+  const targetPath = path.normalize(file);
+  const sorted = [...manifests].sort((a, b) => b.runId.localeCompare(a.runId));
+
+  for (const m of sorted) {
+    if (options.ask && m.ask !== options.ask) continue;
+    if (options.beforeRunId && m.runId >= options.beforeRunId) continue;
+
+    const pair = m.pairs.find((p) => path.normalize(p.file) === targetPath || p.file === file);
+    if (pair) {
+      const dir = path.join(historyDir(cwd), m.runId);
+      return { manifest: m, pair, dir };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Read previous answers for a given file, before a specific run ID (or latest).
+ */
+export async function getPreviousAnswersForFile(
+  cwd: string,
+  file: string,
+  options: { ask?: string; beforeRunId?: string } = {},
+): Promise<{ runId: string; timestamp: string; answers: Record<string, unknown> } | undefined> {
+  const hit = await findPreviousRunForFile(cwd, file, options);
+  if (!hit) return undefined;
+  try {
+    const resp = await readPairResponse(hit.dir, hit.pair.response);
+    if (isRecord(resp) && isRecord(resp.answers)) {
+      return { runId: hit.manifest.runId, timestamp: hit.manifest.timestamp, answers: resp.answers };
+    }
+  } catch {
+    // unreadable response
+  }
+  return undefined;
 }
 
 /** Read and parse a pair response JSON file from a run directory. */

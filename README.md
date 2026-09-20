@@ -11,7 +11,7 @@ Hand-authored question configurations evaluated by **TypeSafe System One** (Jev)
      (frontmatter + prompt + schema)
                  │
                  ▼
-         ask-jev <name> -f <target>
+         ask <name> -f <target>
                  │
       ┌──────────┴──────────┐
       ▼                     ▼
@@ -30,7 +30,7 @@ Hand-authored question configurations evaluated by **TypeSafe System One** (Jev)
     └── report.html
                  │
                  ▼
-        ask-jev serve
+        ask serve
     (Trend Matrix Dashboard)
 ```
 
@@ -39,7 +39,7 @@ Hand-authored question configurations evaluated by **TypeSafe System One** (Jev)
 3. **Reports & Visualization**:
    - **CLI Table / JSON**: Instant terminal scores and JSON output for CI scripting.
    - **Interactive HTML Report**: Expandable three-level pair inspection (Result → Composition → Verbose console).
-   - **Trend Matrix Server**: A web dashboard (`ask-jev serve`) displaying question criteria over time, file/folder rollups, and delta trends.
+   - **Trend Matrix Server**: A web dashboard (`ask serve`) displaying question criteria over time, file/folder rollups, and delta trends.
 
 ---
 
@@ -112,13 +112,15 @@ npx ask-jev serve
 
 | Command | Description |
 |---|---|
-| `ask-jev list` | List available asks in `./.questions` and `~/.questions` |
-| `ask-jev new <name> [--force]` | Scaffold a new question template in `.questions/<name>.md` |
-| `ask-jev <ask> -f <path\|glob>...` | Execute an ask against target files |
-| `ask-jev history [run-id]` | List past run manifests or inspect a single run |
-| `ask-jev show <run-id> [pair#]` | Print raw request markdown and response JSON for a pair |
-| `ask-jev report [run-id] [-o file]` | Generate interactive HTML report |
-| `ask-jev serve [path] [--port 3000]` | Start the local Trend Matrix web dashboard |
+| `ask list` | List available asks in `./.questions` and `~/.questions` |
+| `ask new <name> [--force]` | Scaffold a new question template in `.questions/<name>.md` |
+| `ask <ask> -f <path\|glob>...` | Execute an ask against target files |
+| `ask history [run-id]` | List past run manifests or inspect a single run |
+| `ask history [run-id] -f <file>` | Diff a file's answers vs the prior run of the same ask |
+| `ask clean [--force]` | Delete all recorded runs under `.questions/history/` |
+| `ask show <run-id> [pair#]` | Print raw request markdown and response JSON for a pair |
+| `ask report [run-id] [-o file]` | Generate interactive HTML report |
+| `ask serve [path] [--port 3000]` | Start the local Trend Matrix web dashboard |
 
 See [docs/cli.md](docs/cli.md) for detailed flag references, arguments, and examples.
 

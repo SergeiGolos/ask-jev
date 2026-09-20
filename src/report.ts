@@ -244,7 +244,7 @@ export function renderReportHtml(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ask-jev report — ${esc(m.runId.slice(0, 8))} (${esc(m.ask)})</title>
+<title>ask report — ${esc(m.runId.slice(0, 8))} (${esc(m.ask)})</title>
 <style>
   :root {
     --bg: #ffffff;
@@ -613,7 +613,7 @@ export function renderReportHtml(
 <header class="top">
   <div class="top-row">
     <h1>
-      <span class="app">ask-jev</span>
+      <span class="app">ask</span>
       <span class="sep">/</span>
       <span>${esc(m.ask)}</span>
     </h1>
@@ -731,7 +731,7 @@ export async function writeReport(cwd: string, prefix: string | undefined, out: 
   else ({ manifest, dir } = await findRun(cwd, prefix));
   const pairs = [];
   for (const rec of manifest.pairs) pairs.push({ rec, ...(await readPair(dir, rec)) });
-  const outPath = out ?? `ask-jev-report-${manifest.runId.slice(0, 8)}.html`;
+  const outPath = out ?? `ask-report-${manifest.runId.slice(0, 8)}.html`;
   const abs = resolve(cwd, outPath);
   await writeFile(abs, renderReportHtml(manifest, pairs));
   return abs;

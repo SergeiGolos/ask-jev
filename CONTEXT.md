@@ -6,10 +6,10 @@ Glossary only — no implementation details.
 A named, hand-authored question configuration: a markdown file `<name>.md` living in a `.questions` folder. Executing one is an **ask run**.
 
 ## Ask name
-The ask's filename without the `.md` extension. `ask-jev <ask name>` invokes it.
+The ask's filename without the `.md` extension. `ask <ask name>` invokes it.
 
 ## Ask description
-The front-matter one-liner naming the question an ask answers. `ask-jev list` shows it, so an agent can pick the right ask without reading its body.
+The front-matter one-liner naming the question an ask answers. `ask list` shows it, so an agent can pick the right ask without reading its body.
 
 ## Profile ask / Folder ask
 Profile ask: lives in `~/.questions`. Folder ask: lives in the `.questions` folder of the directory being analyzed. A folder ask shadows a profile ask of the same name.
@@ -48,4 +48,4 @@ The HTML view of a run's pairs, each expandable through three view levels: resul
 The tabular view mapping questions (rows) against chronological runs (columns) for an inspected file or directory, displaying scores, choices, and temporal deltas.
 
 ## Trend server
-The local HTTP service (`ask-jev serve`) providing the trend matrix UI and query endpoints over history.
+The local HTTP service (`ask serve`) providing the trend matrix UI and query endpoints over history.

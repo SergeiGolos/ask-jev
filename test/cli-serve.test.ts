@@ -12,7 +12,7 @@ test("cmdServe help flag returns 0", async () => {
   try {
     const code = await cmdServe(["--help"]);
     assert.equal(code, 0);
-    assert.ok(logged.includes("ask-jev serve"));
+    assert.ok(logged.includes("ask serve"));
     assert.ok(logged.includes("--port"));
   } finally {
     console.log = originalLog;

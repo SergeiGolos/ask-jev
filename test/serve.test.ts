@@ -10,7 +10,7 @@ test("startServer serves static assets and API routes", async () => {
     assert.equal(rootRes.status, 200);
     assert.ok(rootRes.headers.get("content-type")?.includes("text/html"));
     const html = await rootRes.text();
-    assert.ok(html.includes("ask-jev"));
+    assert.ok(html.includes("ask"));
     assert.ok(html.includes("treeContainer"));
 
     // 2. Static asset: style.css

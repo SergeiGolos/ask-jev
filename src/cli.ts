@@ -4,7 +4,7 @@ import path from "node:path";
 import { formatPair } from "./answers.ts";
 import { askDirs, listAsks, resolveConfig } from "./config.ts";
 import { CliError } from "./errors.ts";
-import { findRun, getRunReportPath, historyDir, listRuns, readPair, type RunManifest } from "./history.ts";
+import { cleanRuns, findPreviousRunForFile, findRun, getPreviousAnswersForFile, getRunReportPath, historyDir, listRuns, readPair, type RunManifest } from "./history.ts";
 import { buildTreeData, loadAllManifests } from "./matrix.ts";
 import { BUILTIN } from "./render.ts";
 import { writeReport } from "./report.ts";
@@ -25,6 +25,7 @@ export async function main(argv: string[]): Promise<number> {
     return cmdNew(name, rest.slice(1));
   }
   if (cmd === "history") return cmdHistory(rest);
+  if (cmd === "clean") return cmdClean(rest);
   if (cmd === "show") return cmdShow(rest);
   if (cmd === "report") return cmdReport(rest);
   if (cmd === "serve") return cmdServe(rest);
@@ -32,17 +33,19 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 function usage(code: number): number {
-  console.log(`ask-jev — run hand-authored asks, judged by TypeSafe System One
+  console.log(`ask — run hand-authored asks, judged by TypeSafe System One
 
 Usage:
-  ask-jev list                                     list discovered asks with descriptions (folder ./.questions shadows profile ~/.questions)
-  ask-jev new <name>                               scaffold a new ask
-  ask-jev <question-name> -f <path|glob>...        run an ask, one judge call per file
+  ask list                                         list discovered asks with descriptions (folder ./.questions shadows profile ~/.questions)
+  ask new <name>                                   scaffold a new ask
+  ask <question-name> -f <path|glob>...            run an ask, one judge call per file
         [-t name=value]... [--batch] [--verbose] [--json] [--html]
-  ask-jev history [run-id]                         list runs, or one run's pairs
-  ask-jev show <run-id> [pair]                     print a pair's request md + response json
-  ask-jev report [run-id] [-o file]                write the HTML report (default: latest run)
-  ask-jev serve [path] [--port 3000]               serve trend matrix web dashboard over history
+  ask history [run-id]                             list runs, or one run's pairs
+  ask history [run-id] -f <file>                   diff a file's answers vs the prior run
+  ask clean [--force]                              delete all recorded runs (.questions/history)
+  ask show <run-id> [pair]                         print a pair's request md + response json
+  ask report [run-id] [-o file]                    write the HTML report (default: latest run)
+  ask serve [path] [--port 3000]                   serve trend matrix web dashboard over history
 `);
   return code;
 }
@@ -106,7 +109,7 @@ export function parseRunArgs(rest: string[]): RunFlags {
 
 function fail(msg: string): never {
   throw new CliError(
-    `${msg}\n(usage: ask-jev <question-name> -f <path|glob>... [-t name=value]... [--batch] [--verbose] [--json])`,
+    `${msg}\n(usage: ask <question-name> -f <path|glob>... [-t name=value]... [--batch] [--verbose] [--json])`,
   );
 }
 
@@ -130,11 +133,26 @@ export async function cmdNew(name: string, rest: string[], cwd: string = process
   await mkdir(dir, { recursive: true });
   await writeFile(file, newAskTemplate(name));
   console.log(`created ${file}
-edit it, then run: ask-jev ${name} -f <file>`);
+edit it, then run: ask ${name} -f <file>`);
   return 0;
 }
 
 async function cmdHistory(rest: string[]): Promise<number> {
+  let prefix: string | undefined;
+  let fileArg: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!;
+    if (a === "-f") {
+      fileArg = rest[++i];
+      if (fileArg === undefined) fail("'-f' needs a value");
+    } else if (a.startsWith("-")) {
+      fail(`unknown argument '${a}'`);
+    } else if (prefix === undefined) {
+      prefix = a;
+    } else {
+      fail(`unexpected argument '${a}'`);
+    }
+  }
   if (rest.length === 0) {
     const runs = await listRuns(process.cwd());
     if (runs.length === 0) {
@@ -154,10 +172,44 @@ async function cmdHistory(rest: string[]): Promise<number> {
       );
     return 0;
   }
-  if (rest.length > 1) fail("history takes at most one <run-id>");
-  const { manifest } = await findRun(process.cwd(), rest[0]!);
-  for (const p of manifest.pairs)
-    console.log(`${String(p.n).padStart(3)}  ${p.file}  (${p.request} / ${p.response})`);
+  if (fileArg !== undefined) return cmdHistoryDiff(process.cwd(), prefix, fileArg);
+  if (prefix !== undefined) {
+    const { manifest } = await findRun(process.cwd(), prefix);
+    for (const p of manifest.pairs)
+      console.log(`${String(p.n).padStart(3)}  ${p.file}  (${p.request} / ${p.response})`);
+    return 0;
+  }
+  return 0;
+}
+
+/** Diff one file's answers between a run (or the latest run covering it) and the prior run for the same ask. */
+async function cmdHistoryDiff(cwd: string, prefix: string | undefined, file: string): Promise<number> {
+  const target = prefix ? await findRun(cwd, prefix) : undefined;
+  if (target && !target.manifest.pairs.some((p) => p.file === file))
+    throw new CliError(`run ${target.manifest.runId.slice(0, 8)} did not evaluate '${file}'`);
+  const hit = target ?? (await findPreviousRunForFile(cwd, file));
+  if (!hit) throw new CliError(`no run recorded for '${file}'`);
+  const pair = hit.manifest.pairs.find((p) => p.file === file)!;
+  const { response } = await readPair(hit.dir, pair);
+  const prev = await getPreviousAnswersForFile(cwd, file, { ask: hit.manifest.ask, beforeRunId: hit.manifest.runId });
+  console.log(`${file}  (run ${hit.manifest.runId.slice(0, 8)}${prev ? ` vs ${prev.runId.slice(0, 8)}` : ", no prior run"})`);
+  console.log(formatPair(file, response, prev?.answers).split("\n").slice(1).join("\n"));
+  return 0;
+}
+
+/** Delete every recorded run; destructive, so requires --force. */
+export async function cmdClean(rest: string[], cwd: string = process.cwd()): Promise<number> {
+  if (rest.some((a) => a !== "--force")) fail("clean takes only --force");
+  const dir = historyDir(cwd);
+  const runs = await listRuns(cwd);
+  if (runs.length === 0) {
+    console.log(`no runs recorded yet (looked in ${dir})`);
+    return 0;
+  }
+  if (!rest.includes("--force"))
+    throw new CliError(`refusing to delete ${runs.length} run${runs.length === 1 ? "" : "s"} under ${dir} — pass --force`);
+  await cleanRuns(cwd);
+  console.log(`deleted ${runs.length} run${runs.length === 1 ? "" : "s"} from ${dir}`);
   return 0;
 }
 
@@ -226,7 +278,10 @@ async function cmdRun(name: string, rest: string[], cwd: string = process.cwd(),
       ),
     );
   } else {
-    for (const p of result.pairs) console.log(formatPair(p.file, p.response));
+    for (const p of result.pairs) {
+      const prev = await getPreviousAnswersForFile(cwd, p.file, { ask: name, beforeRunId: result.manifest.runId });
+      console.log(formatPair(p.file, p.response, prev?.answers));
+    }
   }
   if (flags.verbose) console.error(`run ${result.manifest.runId} recorded`);
   if (flags.html) {
@@ -243,10 +298,10 @@ export async function cmdServe(rest: string[], cwd: string = process.cwd()): Pro
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]!;
     if (a === "-h" || a === "--help") {
-      console.log(`ask-jev serve — serve trend matrix web dashboard over history
+      console.log(`ask serve — serve trend matrix web dashboard over history
 
 Usage:
-  ask-jev serve [path] [--port <n>]
+  ask serve [path] [--port <n>]
 
 Options:
   path          project directory containing .questions/history (default: current directory)

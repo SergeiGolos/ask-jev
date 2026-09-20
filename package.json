@@ -4,7 +4,7 @@
   "description": "Run hand-authored ask configurations against files, judged by TypeSafe System One",
   "type": "module",
   "bin": {
-    "ask-jev": "./src/cli.ts"
+    "ask": "./src/cli.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

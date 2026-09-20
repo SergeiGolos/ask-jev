@@ -1,4 +1,4 @@
-// ask-jev trend matrix client application
+// ask trend matrix client application
 
 let treeData = null;
 let currentPath = "";

@@ -144,20 +144,41 @@ export function parseAnswer(q: string, a: unknown): ParsedAnswer {
   throw new Error(`invalid answer for '${q}': missing score, choice, or noul`);
 }
 
-/** Human-readable block for one recorded pair (default terminal output). */
-export function formatPair(file: string, response: unknown): string {
+/** Human-readable block for one recorded pair, showing diff if previous answers are provided. */
+export function formatPair(file: string, response: unknown, previousAnswers?: Record<string, unknown>): string {
   const lines = [file];
   if (isRecord(response) && isRecord(response.answers)) {
     for (const [id, a] of Object.entries(response.answers)) {
       if (!isRecord(a)) continue;
+      const prev = isRecord(previousAnswers) && isRecord(previousAnswers[id]) ? previousAnswers[id] : undefined;
+
       if (typeof a.score === "number") {
+        let diffStr = "";
+        if (prev && typeof prev.score === "number") {
+          const diff = Number((a.score - prev.score).toFixed(1));
+          diffStr = diff > 0 ? ` (+${diff})` : diff < 0 ? ` (${diff})` : " (=)";
+        }
         const legend = isRecord(a.legend) ? a.legend : {};
         const label = legend[String(Math.round(a.score))];
-        lines.push(`  ${id} ${a.score.toFixed(1)}${typeof label === "string" ? ` — ${label}` : ""}`);
+        lines.push(`  ${id} ${a.score.toFixed(1)}${diffStr}${typeof label === "string" ? ` — ${label}` : ""}`);
       } else if (typeof a.noul === "number") {
-        lines.push(`  ${id} ${a.noul >= 0.5 ? "yes" : "no"} (${Math.round(a.noul * 100)}%)`);
+        let diffStr = "";
+        if (prev && typeof prev.noul === "number") {
+          const diff = Math.round((a.noul - prev.noul) * 100);
+          diffStr = diff > 0 ? ` (+${diff}%)` : diff < 0 ? ` (${diff}%)` : " (=)";
+        }
+        lines.push(`  ${id} ${a.noul >= 0.5 ? "yes" : "no"} (${Math.round(a.noul * 100)}%)${diffStr}`);
       } else if (typeof a.choice === "string") {
-        lines.push(`  ${id} ${a.choice}`);
+        let diffStr = "";
+        if (prev && prev.choice !== undefined) {
+          const pc = String(prev.choice);
+          const [cn, pn] = [Number(a.choice), Number(pc)];
+          diffStr =
+            pc === a.choice ? " (=)"
+            : !Number.isNaN(cn) && !Number.isNaN(pn) ? ` (${cn - pn > 0 ? "+" : ""}${cn - pn})`
+            : ` (was: ${pc})`;
+        }
+        lines.push(`  ${id} ${a.choice}${diffStr}`);
       } else {
         lines.push(`  ${id} ${JSON.stringify(a)}`);
       }
