@@ -10,6 +10,7 @@ schema:
       false: "Passes — no principle violation warrants a rework"
   srp_violations:
     type: score
+    direction: low
     instructions: "God Class — one class/module juggles several unrelated concerns (parse + persist + HTTP + format) whose helper methods form distinct clusters; multiple reasons to change in one file"
     criteria: &scale
       - "Absent — no instances in the file"
@@ -18,18 +19,22 @@ schema:
       - "Severe — pervasive; the file is defined by it"
   ocp_violations:
     type: score
+    direction: low
     instructions: "Switch-on-Type / Conditional Cascade — core logic dispatches on a type-code/kind enum via switch or if-else chains, so adding a variant requires editing this dispatch instead of adding a type"
     criteria: *scale
   lsp_violations:
     type: score
+    direction: low
     instructions: "Broken Substitutability — subclass methods throw NotImplementedError/UnsupportedOperationException, return dummies, or callers guard base-type use with instanceof/type checks"
     criteria: *scale
   isp_violations:
     type: score
+    direction: low
     instructions: "Fat Interface — one wide interface/protocol whose implementers leave some methods empty bodies, pass, or throw, forcing unused methods on heterogeneous clients"
     criteria: *scale
   dip_violations:
     type: score
+    direction: low
     instructions: "Hardwired Dependencies — high-level logic news up concrete DB/HTTP/config/clock objects inline with no injection seam, so the unit cannot be tested without real services"
     criteria: *scale
 ---

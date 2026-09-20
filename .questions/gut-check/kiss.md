@@ -10,6 +10,7 @@ schema:
       false: "Passes — every construct earns its place; complexity tracks the problem's essential complexity"
   long_method:
     type: score
+    direction: low
     instructions: "Long Method — one function spans many lines, mixes several jobs, and cannot be summarized in a single sentence"
     criteria: &scale
       - "Absent — no instances in the file"
@@ -18,30 +19,37 @@ schema:
       - "Severe — pervasive; the file is defined by it"
   deep_nesting:
     type: score
+    direction: low
     instructions: "Arrow Anti-Pattern — if/else/for/try blocks indented 4+ levels into an arrow shape instead of guard clauses or early returns"
     criteria: *scale
   needless_indirection:
     type: score
+    direction: low
     instructions: "Middle Man / Indirection Layer — pass-through wrappers, single-implementation interfaces, or factory chains that forward calls without adding behavior"
     criteria: *scale
   speculative_generality:
     type: score
+    direction: low
     instructions: "Speculative Generality — unused type parameters, config flags, extension points, or 'just in case' flexibility serving no current requirement"
     criteria: *scale
   premature_optimization:
     type: score
+    direction: low
     instructions: "Premature Optimization — manual caching, bit tricks, unrolled loops, or hand-rolled fast paths with no measured need, sacrificing clarity"
     criteria: *scale
   obfuscated_cleverness:
     type: score
+    direction: low
     instructions: "Clever Code — chained ternaries, XOR swap, implicit coercion, or operator abuse a reader must mentally execute to decode"
     criteria: *scale
   long_parameter_list:
     type: score
+    direction: low
     instructions: "Long Parameter List — functions taking 5+ arguments (especially boolean flags) that an object or restructuring would collapse"
     criteria: *scale
   comment_deodorant:
     type: score
+    direction: low
     instructions: "Comment As Deodorant — comments like 'hack', 'don't touch', 'works because...' apologizing for convoluted code instead of the code being clear"
     criteria: *scale
 ---

@@ -10,6 +10,7 @@ schema:
       false: "Passes — everything in the file is exercised by a current code path"
   unused_export:
     type: score
+    direction: low
     instructions: "Unused Export — an exported class/function/constant that no code in the file references, exported on spec for callers that don't exist yet"
     criteria: &scale
       - "Absent — no instances in the file"
@@ -18,30 +19,37 @@ schema:
       - "Severe — pervasive; the file is defined by it"
   unused_parameter:
     type: score
+    direction: low
     instructions: "Unused Parameter — a signature parameter never read in the body, typically kept 'so callers can pass it later'"
     criteria: *scale
   one_impl_interface:
     type: score
+    direction: low
     instructions: "One-Implementation Interface — an interface/abstract class whose sole implementer is in the same file, built purely as a flexibility point"
     criteria: *scale
   dead_code:
     type: score
+    direction: low
     instructions: "Dead Code — commented-out code, statements after a return/throw, or branches guarded by conditions that can never be true"
     criteria: *scale
   placeholder_stub:
     type: score
+    direction: low
     instructions: "Placeholder Stub — a method body that throws NotImplemented, returns null/empty, or carries a TODO because the real feature is 'for later'"
     criteria: *scale
   future_tense_marker:
     type: score
+    direction: low
     instructions: "Future-Tense Marker — identifiers or comments saying 'future', 'will support', 'eventually', 'reserved for' advertising capability no current code path uses"
     criteria: *scale
   speculative_wrapper:
     type: score
+    direction: low
     instructions: "Speculative Wrapper — a class or function that only forwards to another member without adding behavior; delegation awaiting an imagined abstraction"
     criteria: *scale
   config_for_later:
     type: score
+    direction: low
     instructions: "Config For Later — an options object, flag, or knob with exactly one value ever supplied, parameterized against a future that hasn't arrived"
     criteria: *scale
 ---

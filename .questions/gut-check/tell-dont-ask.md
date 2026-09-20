@@ -10,6 +10,7 @@ schema:
       false: "Passes — objects are told what to do; queries are side-effect-free"
   anemic_domain_model:
     type: score
+    direction: low
     instructions: "Anemic Domain Model — a domain-noun type (Order, Account, Invoice...) holds nothing but fields and accessors while sibling functions in the same file make all the rule decisions about that state"
     criteria: &scale
       - "Absent — no instances in the file"
@@ -18,26 +19,32 @@ schema:
       - "Severe — pervasive; the file is defined by it"
   data_class:
     type: score
+    direction: low
     instructions: "Data Class — a type exposes essentially every field through symmetric public getter/setter pairs and offers no other behavior"
     criteria: *scale
   feature_envy:
     type: score
+    direction: low
     instructions: "Feature Envy — within one method, accesses of a collaborator's data clearly outnumber uses of the method's own object's state"
     criteria: *scale
   train_wreck:
     type: score
+    direction: low
     instructions: "Message Chains — an expression navigates multiple accessor hops (a.getB().getC().getD()) to fetch data for a decision made right there"
     criteria: *scale
   ask_then_mutate:
     type: score
+    direction: low
     instructions: "Ask-Then-Mutate — a function reads a value/flag from an object, branches on it, then calls that same object's setter/command with the outcome; a check-and-act that should be one command inside the object"
     criteria: *scale
   temporal_coupling:
     type: score
+    direction: low
     instructions: "Temporal Coupling — correctness depends on the caller invoking methods in one specific order (check/validate/isReady before act/apply/commit) with nothing enforcing that order"
     criteria: *scale
   cqs_violation:
     type: score
+    direction: low
     instructions: "Command-Query Separation Violation — a query-named method (get..., is..., find..., calculate...) mutates state, or a state-changing method returns a value callers rely on (benign pop-and-return or caching idioms exempt)"
     criteria: *scale
 ---

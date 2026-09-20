@@ -10,6 +10,7 @@ schema:
       false: "Passes — identifiers are intention-revealing, encoding-free, and convention-consistent"
   meaningless_name:
     type: score
+    direction: low
     instructions: "Meaningless Name — data, temp, foo, result, value, handleStuff standing in for a purpose-stating name"
     criteria: &scale
       - "Absent — no instances in the file"
@@ -18,30 +19,37 @@ schema:
       - "Severe — pervasive; the file is defined by it"
   misleading_name:
     type: score
+    direction: low
     instructions: "Misleading Name — identifier contradicts body behavior visible in the file, e.g. getUsers() that clears a collection, userList holding a Map"
     criteria: *scale
   type_prefix_encoding:
     type: score
+    direction: low
     instructions: "Systems Hungarian / Type Encoding — strName, iCount, bFlag, dwFoo, mName, kName prefixing compile-time type or scope that the declaration already shows"
     criteria: *scale
   noise_word_suffix:
     type: score
+    direction: low
     instructions: "Noise Word — UserInfo, DataManager, OrderHelper, ResponseProcessor appending Info/Data/Manager/Helper/Processor without distinguishing anything from the base concept"
     criteria: *scale
   unpronounceable_abbreviation:
     type: score
+    direction: low
     instructions: "Unpronounceable Abbreviation — drop-vowel or crunched names like usrMgr, calcTot, prcItem, addrLst that a reader cannot say aloud or grep reliably"
     criteria: *scale
   boolean_without_predicate:
     type: score
+    direction: low
     instructions: "Non-Predicate Boolean — a bool named flag, check, state, status — or negatively isNotEnabled forcing double negation — instead of an is/has/can/found-style predicate"
     criteria: *scale
   inconsistent_convention:
     type: score
+    direction: low
     instructions: "Inconsistent Convention In-File — one identifier category mixes styles (snake_case params among camelCase, UPPER locals) or synonym verbs (fetch/get/retrieve) for one concept"
     criteria: *scale
   mental_mapping_name:
     type: score
+    direction: low
     instructions: "Mental-Mapping Name — single letters a, b, x, o outside tiny loop counters or one-char public-method parameters, making readers translate in their heads"
     criteria: *scale
 ---

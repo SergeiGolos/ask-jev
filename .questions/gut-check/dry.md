@@ -10,6 +10,7 @@ schema:
       false: "Passes — every piece of knowledge has a single authoritative representation"
   clone_and_modify_block:
     type: score
+    direction: low
     instructions: "Clone-and-Modify — two nearby blocks are token-identical except for a handful of swapped values"
     criteria: &scale
       - "Absent — no instances in the file"
@@ -18,30 +19,37 @@ schema:
       - "Severe — pervasive; the file is defined by it"
   near_miss_clone:
     type: score
+    direction: low
     instructions: "Type-3 Clone — repeated statement skeleton with a few statements added/removed or identifiers renamed between copies"
     criteria: *scale
   copy_paste_function:
     type: score
+    direction: low
     instructions: "Duplicated Code — two functions in the file with essentially the same body, one carrying a small tweak"
     criteria: *scale
   magic_number:
     type: score
+    direction: low
     instructions: "Magic Number — a bare literal with domain meaning embedded in expressions with no named constant"
     criteria: *scale
   repeated_literal:
     type: score
+    direction: low
     instructions: "Repeated Literal — the same non-obvious string or number literal occurs three or more times in the file"
     criteria: *scale
   redundant_helper:
     type: score
+    direction: low
     instructions: "Redundant Helper — two or more local helpers under different names that perform the same transformation with only trivial differences"
     criteria: *scale
   divergent_clone:
     type: score
+    direction: low
     instructions: "Divergent Clone — one copy of a duplicated block carries a guard or fix its twin lacks; the twins encode one knowledge that already drifted"
     criteria: *scale
   wrong_abstraction_conditional:
     type: score
+    direction: low
     instructions: "Wrong Abstraction — a 'shared' helper takes flags/parameters only to branch into caller-specific paths"
     criteria: *scale
 ---

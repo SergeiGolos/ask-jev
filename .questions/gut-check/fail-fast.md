@@ -10,6 +10,7 @@ schema:
       false: "Passes — every caught failure is visible and no failure is signaled via null/sentinel"
   empty_catch_block:
     type: score
+    direction: low
     instructions: "Empty Catch — catch block body is empty or only a comment, discarding the error entirely (exception swallowing)"
     criteria: &scale
       - "Absent — no instances in the file"
@@ -18,30 +19,37 @@ schema:
       - "Severe — pervasive; the file is defined by it"
   catch_log_continue:
     type: score
+    direction: low
     instructions: "Catch-Log-Continue — handler logs (or ignores) then falls through returning normally, so callers cannot distinguish success from failure"
     criteria: *scale
   null_return_signal:
     type: score
+    direction: low
     instructions: "Returning Null as Error — failure path returns null, pushing the real failure point to a later dereference"
     criteria: *scale
   sentinel_error_code:
     type: score
+    direction: low
     instructions: "Error-Code Return — method returns -1/0/false/status-code enum to flag failure instead of raising"
     criteria: *scale
   catch_all_catch:
     type: score
+    direction: low
     instructions: "Overly Broad Catch — bare except:/catch (Exception)/catch (Throwable) mid-stack, capturing programming errors it cannot handle"
     criteria: *scale
   deferred_validation:
     type: score
+    direction: low
     instructions: "Missing Boundary Checks — public entry point dereferences inputs with no precondition, letting bad values crash far from the boundary"
     criteria: *scale
   unasserted_impossible_state:
     type: score
+    direction: low
     instructions: "Unasserted Impossible State — branch marked 'unreachable'/'should never happen' (comment or default: pass) with no assertion or throw"
     criteria: *scale
   lost_cause_chain:
     type: score
+    direction: low
     instructions: "Swallowed Cause — catch block logs/throws a new generic message without wrapping or recording the original exception"
     criteria: *scale
 ---
